@@ -18,10 +18,10 @@ export function createBot(): Telegraf<BotContext> {
   // Scene setup
   const stage = new Scenes.Stage<BotContext>([dealCreationScene, disputeScene]);
 
-  // Middleware
+  // Middleware — userMiddleware MUST run before stage so ctx.dbUser is set for scene handlers
   bot.use(session());
-  bot.use(stage.middleware());
   bot.use(userMiddleware);
+  bot.use(stage.middleware());
 
   // Commands
   setupCommands(bot);

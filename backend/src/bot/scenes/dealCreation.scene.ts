@@ -4,6 +4,7 @@ import { DealTemplate, User, Deal } from '../../models';
 import { generateDealId } from '../../utils/dealId';
 import { getNotificationService } from '../../services/notification.service';
 import { formatDealSummary } from '../utils/formatDeal';
+import { logger } from '../../utils/logger';
 import {
   roleKeyboard, templateKeyboard, currencyKeyboard, paymentTypeKeyboard,
   depositKeyboard, deadlineKeyboard, autoReleaseKeyboard, disputeWindowKeyboard,
@@ -542,6 +543,7 @@ dealCreationScene.action('wizard:confirm', async (ctx) => {
       await notificationService.notifyDealCreated(populatedDeal);
     }
   } catch (error) {
+    logger.error('Deal creation error:', error);
     await ctx.reply('Failed to create deal. Please try again with /newdeal.');
   }
 
