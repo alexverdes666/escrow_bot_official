@@ -1,0 +1,5 @@
+{
+  "name": "escrow-telegram",
+  "private": true,
+  "workspaces": ["backend", "frontend"]
+}
