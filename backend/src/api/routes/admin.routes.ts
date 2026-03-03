@@ -109,6 +109,31 @@ adminRoutes.post('/disputes/:disputeId/resolve', async (req: AuthRequest, res: R
       }
     }
 
+    // Update reputation for both parties
+    const resolvedDeal = deal || await Deal.findById(dispute.deal);
+    if (resolvedDeal) {
+      const buyerId = resolvedDeal.buyer;
+      const sellerId = resolvedDeal.seller;
+
+      // Both get disputesTotal incremented
+      await User.findByIdAndUpdate(buyerId, { $inc: { 'reputation.disputesTotal': 1 } });
+      await User.findByIdAndUpdate(sellerId, { $inc: { 'reputation.disputesTotal': 1 } });
+
+      if (decision === 'release_to_seller') {
+        // Seller wins, buyer loses
+        await User.findByIdAndUpdate(sellerId, { $inc: { 'reputation.disputesWon': 1, 'reputation.score': 5 } });
+        await User.findByIdAndUpdate(buyerId, { $inc: { 'reputation.disputesLost': 1, 'reputation.score': -5 } });
+      } else if (decision === 'refund_to_buyer') {
+        // Buyer wins, seller loses
+        await User.findByIdAndUpdate(buyerId, { $inc: { 'reputation.disputesWon': 1, 'reputation.score': 5 } });
+        await User.findByIdAndUpdate(sellerId, { $inc: { 'reputation.disputesLost': 1, 'reputation.score': -5 } });
+      } else if (decision === 'split') {
+        // Split — no clear winner, both get disputesWon (compromise)
+        await User.findByIdAndUpdate(buyerId, { $inc: { 'reputation.disputesWon': 1 } });
+        await User.findByIdAndUpdate(sellerId, { $inc: { 'reputation.disputesWon': 1 } });
+      }
+    }
+
     // Log admin action
     await AuditLog.create({
       action: 'dispute_resolved',
