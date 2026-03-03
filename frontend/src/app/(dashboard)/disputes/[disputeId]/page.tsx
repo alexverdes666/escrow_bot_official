@@ -6,7 +6,7 @@ import { useAuthStore } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft, Send, Upload } from 'lucide-react';
+import { ArrowLeft, Send, Upload, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,20 @@ export default function DisputeDetailPage() {
   const [message, setMessage] = useState('');
   const [evidenceText, setEvidenceText] = useState('');
   const queryClient = useQueryClient();
+
+  const closeDispute = useMutation({
+    mutationFn: async () => {
+      await api.post(`/disputes/${disputeId}/close`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dispute', disputeId] });
+      queryClient.invalidateQueries({ queryKey: ['disputes'] });
+      toast.success('Dispute closed');
+    },
+    onError: () => {
+      toast.error('Failed to close dispute');
+    },
+  });
 
   const sendMessage = useMutation({
     mutationFn: async () => {
@@ -69,6 +83,21 @@ export default function DisputeDetailPage() {
         <p className="text-gray-400 text-sm">
           Opened by @{dispute.openedBy?.username || dispute.openedBy?.firstName} ({dispute.openedByRole}) on {format(new Date(dispute.createdAt), 'MMM d, yyyy HH:mm')}
         </p>
+
+        {dispute.status !== 'resolved' && dispute.status !== 'closed' && (
+          <button
+            onClick={() => {
+              if (confirm('Are you sure you want to close this dispute? The deal will return to delivered status.')) {
+                closeDispute.mutate();
+              }
+            }}
+            disabled={closeDispute.isPending}
+            className="mt-4 inline-flex items-center gap-2 bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 disabled:opacity-50 text-sm font-medium"
+          >
+            <XCircle className="w-4 h-4" />
+            {closeDispute.isPending ? 'Closing...' : 'Withdraw / Close Dispute'}
+          </button>
+        )}
       </div>
 
       {/* Resolution (if resolved) */}

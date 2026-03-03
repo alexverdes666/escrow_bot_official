@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { Dispute, Deal } from '../../models';
+import { getNotificationService } from '../../services/notification.service';
 
 export const disputeRoutes = Router();
 
@@ -112,5 +113,72 @@ disputeRoutes.post('/:disputeId/messages', async (req: AuthRequest, res: Respons
     res.json(dispute);
   } catch (error) {
     res.status(500).json({ error: 'Failed to add message' });
+  }
+});
+
+// Close/withdraw dispute (by either party)
+disputeRoutes.post('/:disputeId/close', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+
+    const dispute = await Dispute.findById(req.params.disputeId).populate('deal');
+    if (!dispute) {
+      res.status(404).json({ error: 'Dispute not found' });
+      return;
+    }
+
+    if (dispute.status === 'resolved' || dispute.status === 'closed') {
+      res.status(400).json({ error: 'Dispute is already closed' });
+      return;
+    }
+
+    const deal = dispute.deal as any;
+    const isBuyer = deal.buyer.toString() === userId;
+    const isSeller = deal.seller.toString() === userId;
+
+    if (!isBuyer && !isSeller) {
+      res.status(403).json({ error: 'Only deal participants can close a dispute' });
+      return;
+    }
+
+    // Close the dispute
+    dispute.status = 'closed';
+    dispute.resolution = {
+      decision: 'custom',
+      explanation: `Dispute withdrawn by ${isBuyer ? 'buyer' : 'seller'}`,
+      decidedBy: userId as any,
+      decidedAt: new Date(),
+    };
+    await dispute.save();
+
+    // Restore deal to delivered status (before dispute)
+    deal.status = 'delivered';
+    deal.statusHistory.push({
+      status: 'delivered',
+      changedBy: userId,
+      note: 'Dispute closed by participant',
+    });
+    await deal.save();
+
+    // Notify both parties
+    const notificationService = getNotificationService();
+    if (notificationService) {
+      const { User } = await import('../../models');
+      const buyer = await User.findById(deal.buyer);
+      const seller = await User.findById(deal.seller);
+      if (buyer && seller) {
+        const msg = `✅ <b>Dispute Closed — ${deal.dealId}</b>\n\n` +
+          `The dispute has been withdrawn by ${isBuyer ? 'the buyer' : 'the seller'}.\n` +
+          `The deal is now back to delivered status.`;
+        await Promise.all([
+          notificationService.sendToUser(buyer.telegramId, msg),
+          notificationService.sendToUser(seller.telegramId, msg),
+        ]);
+      }
+    }
+
+    res.json(dispute);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to close dispute' });
   }
 });

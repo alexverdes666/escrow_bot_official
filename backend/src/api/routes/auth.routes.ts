@@ -3,6 +3,7 @@ import { verifyTelegramAuth } from '../../utils/telegramAuth';
 import { signToken } from '../../utils/jwt';
 import { User } from '../../models';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
+import { env } from '../../config/env';
 
 export const authRoutes = Router();
 
@@ -37,6 +38,7 @@ authRoutes.post('/telegram', async (req: Request, res: Response) => {
     }
 
     // Upsert user
+    const isAdmin = env.ADMIN_TELEGRAM_IDS.includes(authData.id);
     const user = await User.findOneAndUpdate(
       { telegramId: authData.id },
       {
@@ -46,6 +48,7 @@ authRoutes.post('/telegram', async (req: Request, res: Response) => {
         username: authData.username,
         photoUrl: authData.photo_url,
         lastActiveAt: new Date(),
+        ...(isAdmin ? { role: 'admin' } : {}),
       },
       { upsert: true, new: true }
     );
