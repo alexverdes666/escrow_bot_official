@@ -6,7 +6,7 @@ import { useAuthStore } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft, Send, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, Send, Upload, XCircle, FileText, Download } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -122,34 +122,71 @@ export default function DisputeDetailPage() {
         {/* Evidence */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold mb-3">Evidence ({dispute.evidence?.length || 0})</h2>
-          <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-            {dispute.evidence?.map((ev: any, i: number) => (
-              <div key={i} className="bg-gray-50 p-3 rounded-lg text-sm">
-                <div className="flex justify-between text-xs text-gray-400 mb-1">
-                  <span>@{ev.submittedBy?.username || 'user'}</span>
-                  <span>{format(new Date(ev.submittedAt), 'MMM d, HH:mm')}</span>
+          <div className="space-y-3 mb-4 max-h-80 overflow-y-auto">
+            {dispute.evidence?.map((ev: any, i: number) => {
+              const isFile = ev.type === 'image' || ev.type === 'document';
+              const fileUrl = isFile && ev._id
+                ? `${api.defaults.baseURL}/disputes/${disputeId}/evidence/${ev._id}/file`
+                : null;
+              const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+              const authedUrl = fileUrl && token ? `${fileUrl}?token=${token}` : fileUrl;
+
+              return (
+                <div key={i} className="bg-gray-50 p-3 rounded-lg text-sm">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>@{ev.submittedBy?.username || 'user'}</span>
+                    <span>{format(new Date(ev.submittedAt), 'MMM d, HH:mm')}</span>
+                  </div>
+                  {ev.type === 'image' && authedUrl ? (
+                    <a href={authedUrl} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={authedUrl}
+                        alt={ev.fileName || 'Evidence'}
+                        className="max-h-48 rounded mt-1 bg-gray-200"
+                        loading="lazy"
+                      />
+                    </a>
+                  ) : ev.type === 'document' && authedUrl ? (
+                    <a
+                      href={authedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 mt-1 text-primary-600 hover:text-primary-700"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>{ev.fileName || 'Document'}</span>
+                      <Download className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <p className="text-gray-700">{ev.content}</p>
+                  )}
                 </div>
-                <p className="text-gray-700">{ev.content}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {dispute.status !== 'resolved' && (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Add text evidence..."
-                value={evidenceText}
-                onChange={(e) => setEvidenceText(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
-              <button
-                onClick={() => submitEvidence.mutate()}
-                disabled={!evidenceText || submitEvidence.isPending}
-                className="bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50"
-              >
-                <Upload className="w-4 h-4" />
-              </button>
+          {dispute.status !== 'resolved' && dispute.status !== 'closed' && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add text evidence..."
+                  value={evidenceText}
+                  onChange={(e) => setEvidenceText(e.target.value)}
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={() => submitEvidence.mutate()}
+                  disabled={!evidenceText || submitEvidence.isPending}
+                  className="bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                >
+                  <Upload className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">
+                File evidence can be submitted via the Telegram bot.
+              </p>
             </div>
           )}
         </div>

@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { Deal } from '../../models';
+import { getTelegramApi } from '../../services/notification.service';
+import { logger } from '../../utils/logger';
 
 export const dealRoutes = Router();
 
@@ -71,6 +73,7 @@ dealRoutes.get('/:dealId', async (req: AuthRequest, res: Response) => {
       .populate('buyer', 'username firstName telegramId reputation')
       .populate('seller', 'username firstName telegramId reputation')
       .populate('createdBy', 'username firstName')
+      .populate('attachments.uploadedBy', 'username firstName')
       .lean();
 
     if (!deal) {
@@ -89,5 +92,69 @@ dealRoutes.get('/:dealId', async (req: AuthRequest, res: Response) => {
     res.json(deal);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch deal' });
+  }
+});
+
+// Proxy attachment file from Telegram
+dealRoutes.get('/:dealId/attachments/:attachmentId/file', async (req: AuthRequest, res: Response) => {
+  try {
+    const deal = await Deal.findOne({ dealId: req.params.dealId });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    // Auth: participant or admin
+    const userId = req.user!.userId;
+    const isParticipant = deal.buyer.toString() === userId || deal.seller.toString() === userId;
+    if (!isParticipant && req.user!.role !== 'admin') {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const attachment = deal.attachments.find(
+      (a: any) => a._id?.toString() === req.params.attachmentId
+    );
+    if (!attachment) {
+      res.status(404).json({ error: 'Attachment not found' });
+      return;
+    }
+
+    const telegram = getTelegramApi();
+    if (!telegram) {
+      res.status(503).json({ error: 'Bot service unavailable' });
+      return;
+    }
+
+    const fileLink = await telegram.getFileLink(attachment.fileId);
+    const url = typeof fileLink === 'string' ? fileLink : fileLink.href;
+
+    // Fetch from Telegram and stream to response
+    const fileRes = await globalThis.fetch(url);
+    if (!fileRes.ok || !fileRes.body) {
+      res.status(502).json({ error: 'Failed to fetch file from Telegram' });
+      return;
+    }
+
+    if (attachment.mimeType) {
+      res.setHeader('Content-Type', attachment.mimeType);
+    } else if (attachment.fileType === 'photo') {
+      res.setHeader('Content-Type', 'image/jpeg');
+    }
+    if (attachment.fileName) {
+      res.setHeader('Content-Disposition', `inline; filename="${attachment.fileName}"`);
+    }
+    if (attachment.fileSize) {
+      res.setHeader('Content-Length', String(attachment.fileSize));
+    }
+
+    // Cache for 1 hour (Telegram file links are valid for ~1h)
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const { Readable } = await import('stream');
+    Readable.fromWeb(fileRes.body as any).pipe(res);
+  } catch (error) {
+    logger.error('File proxy error:', error);
+    res.status(500).json({ error: 'Failed to proxy file' });
   }
 });

@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { Dispute, Deal } from '../../models';
-import { getNotificationService } from '../../services/notification.service';
+import { getNotificationService, getTelegramApi } from '../../services/notification.service';
+import { logger } from '../../utils/logger';
 
 export const disputeRoutes = Router();
 
@@ -180,5 +181,69 @@ disputeRoutes.post('/:disputeId/close', async (req: AuthRequest, res: Response) 
     res.json(dispute);
   } catch (error) {
     res.status(500).json({ error: 'Failed to close dispute' });
+  }
+});
+
+// Proxy evidence file from Telegram
+disputeRoutes.get('/:disputeId/evidence/:evidenceId/file', async (req: AuthRequest, res: Response) => {
+  try {
+    const dispute = await Dispute.findById(req.params.disputeId).populate('deal');
+    if (!dispute) {
+      res.status(404).json({ error: 'Dispute not found' });
+      return;
+    }
+
+    // Auth: deal participant or admin
+    const deal = dispute.deal as any;
+    const userId = req.user!.userId;
+    const isParticipant = deal.buyer.toString() === userId || deal.seller.toString() === userId;
+    if (!isParticipant && req.user!.role !== 'admin') {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const evidence = dispute.evidence.find(
+      (e: any) => e._id?.toString() === req.params.evidenceId
+    );
+    if (!evidence || (evidence.type !== 'image' && evidence.type !== 'document')) {
+      res.status(404).json({ error: 'File evidence not found' });
+      return;
+    }
+
+    const telegram = getTelegramApi();
+    if (!telegram) {
+      res.status(503).json({ error: 'Bot service unavailable' });
+      return;
+    }
+
+    // content stores the Telegram file_id for image/document evidence
+    const fileLink = await telegram.getFileLink(evidence.content);
+    const url = typeof fileLink === 'string' ? fileLink : fileLink.href;
+
+    const fileRes = await globalThis.fetch(url);
+    if (!fileRes.ok || !fileRes.body) {
+      res.status(502).json({ error: 'Failed to fetch file from Telegram' });
+      return;
+    }
+
+    if (evidence.mimeType) {
+      res.setHeader('Content-Type', evidence.mimeType);
+    } else if (evidence.type === 'image') {
+      res.setHeader('Content-Type', 'image/jpeg');
+    }
+    if (evidence.fileName) {
+      res.setHeader('Content-Disposition', `inline; filename="${evidence.fileName}"`);
+    }
+    if (evidence.fileSize) {
+      res.setHeader('Content-Length', String(evidence.fileSize));
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const { Readable } = await import('stream');
+    Readable.fromWeb(fileRes.body as any).pipe(res);
+  } catch (error) {
+    logger.error('Evidence file proxy error:', error);
+    res.status(500).json({ error: 'Failed to proxy file' });
   }
 });

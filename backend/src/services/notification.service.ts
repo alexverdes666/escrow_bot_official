@@ -15,6 +15,10 @@ export class NotificationService {
     this.bot = bot;
   }
 
+  getTelegram() {
+    return this.bot.telegram;
+  }
+
   async sendToUser(telegramId: number, message: string, extra?: object): Promise<void> {
     try {
       await this.bot.telegram.sendMessage(telegramId, message, {
@@ -342,4 +346,8 @@ export function initNotificationService(bot: Telegraf<any>): NotificationService
 
 export function getNotificationService(): NotificationService | null {
   return notificationServiceInstance;
+}
+
+export function getTelegramApi() {
+  return notificationServiceInstance?.getTelegram() ?? null;
 }

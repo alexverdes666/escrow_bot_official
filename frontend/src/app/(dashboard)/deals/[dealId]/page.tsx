@@ -5,8 +5,9 @@ import { useParams } from 'next/navigation';
 import { DealStatusBadge } from '@/components/deals/DealStatusBadge';
 import { DealOriginBadge } from '@/components/deals/DealOriginBadge';
 import { useAuthStore } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { format } from 'date-fns';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Paperclip, FileText, Image, Download } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DealDetailPage() {
@@ -148,6 +149,71 @@ export default function DealDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Attachments */}
+      {deal.attachments?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <h2 className="font-semibold mb-3 flex items-center gap-2">
+            <Paperclip className="w-4 h-4" />
+            Attachments ({deal.attachments.length})
+          </h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {deal.attachments.map((att: any) => {
+              const fileUrl = `${api.defaults.baseURL}/deals/${deal.dealId}/attachments/${att._id}/file`;
+              const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+              const authedUrl = token ? `${fileUrl}?token=${token}` : fileUrl;
+              const isPhoto = att.fileType === 'photo';
+              const uploaderName = att.uploadedBy?.username
+                ? `@${att.uploadedBy.username}`
+                : att.uploadedBy?.firstName || 'Unknown';
+
+              return (
+                <div key={att._id} className="border border-gray-100 rounded-lg overflow-hidden">
+                  {isPhoto ? (
+                    <a href={authedUrl} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={authedUrl}
+                        alt={att.caption || 'Attachment'}
+                        className="w-full h-40 object-cover bg-gray-100"
+                        loading="lazy"
+                      />
+                    </a>
+                  ) : (
+                    <a
+                      href={authedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center h-40 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <FileText className="w-10 h-10 text-gray-400" />
+                    </a>
+                  )}
+                  <div className="p-2">
+                    <p className="text-sm font-medium truncate">
+                      {att.fileName || (isPhoto ? 'Photo' : 'Document')}
+                    </p>
+                    <div className="flex justify-between items-center text-xs text-gray-400 mt-1">
+                      <span>{uploaderName}</span>
+                      <span>{format(new Date(att.uploadedAt), 'MMM d')}</span>
+                    </div>
+                    {att.caption && (
+                      <p className="text-xs text-gray-500 mt-1 truncate">{att.caption}</p>
+                    )}
+                    <a
+                      href={authedUrl}
+                      download={att.fileName || true}
+                      className="mt-2 inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      <Download className="w-3 h-3" /> Download
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Status Timeline */}
       {deal.statusHistory?.length > 0 && (

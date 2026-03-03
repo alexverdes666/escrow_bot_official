@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileText, Download } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -61,12 +61,44 @@ export default function AdminDisputeResolvePage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h2 className="font-semibold mb-3">Evidence ({dispute.evidence?.length || 0})</h2>
         <div className="space-y-2 max-h-60 overflow-y-auto">
-          {dispute.evidence?.map((ev: any, i: number) => (
-            <div key={i} className="bg-gray-50 p-3 rounded text-sm">
-              <span className="text-xs text-gray-400">@{ev.submittedBy?.username} — {format(new Date(ev.submittedAt), 'MMM d, HH:mm')}</span>
-              <p className="mt-1">{ev.content}</p>
-            </div>
-          ))}
+          {dispute.evidence?.map((ev: any, i: number) => {
+            const isFile = ev.type === 'image' || ev.type === 'document';
+            const fileUrl = isFile && ev._id
+              ? `${api.defaults.baseURL}/disputes/${disputeId}/evidence/${ev._id}/file`
+              : null;
+            const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+            const authedUrl = fileUrl && token ? `${fileUrl}?token=${token}` : fileUrl;
+
+            return (
+              <div key={i} className="bg-gray-50 p-3 rounded text-sm">
+                <span className="text-xs text-gray-400">@{ev.submittedBy?.username} — {format(new Date(ev.submittedAt), 'MMM d, HH:mm')}</span>
+                {ev.type === 'image' && authedUrl ? (
+                  <a href={authedUrl} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={authedUrl}
+                      alt={ev.fileName || 'Evidence'}
+                      className="max-h-48 rounded mt-1 bg-gray-200"
+                      loading="lazy"
+                    />
+                  </a>
+                ) : ev.type === 'document' && authedUrl ? (
+                  <a
+                    href={authedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 mt-1 text-primary-600 hover:text-primary-700"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>{ev.fileName || 'Document'}</span>
+                    <Download className="w-3 h-3" />
+                  </a>
+                ) : (
+                  <p className="mt-1">{ev.content}</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
