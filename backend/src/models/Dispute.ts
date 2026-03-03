@@ -5,6 +5,9 @@ export interface IEvidence {
   type: 'text' | 'image' | 'document' | 'link';
   content: string;
   fileName?: string;
+  fileUniqueId?: string;
+  mimeType?: string;
+  fileSize?: number;
   submittedAt: Date;
 }
 
@@ -44,6 +47,9 @@ const evidenceSchema = new Schema({
   type: { type: String, enum: ['text', 'image', 'document', 'link'], required: true },
   content: { type: String, required: true },
   fileName: { type: String },
+  fileUniqueId: { type: String },
+  mimeType: { type: String },
+  fileSize: { type: Number },
   submittedAt: { type: Date, default: Date.now },
 }, { _id: true });
 

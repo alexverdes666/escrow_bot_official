@@ -77,6 +77,20 @@ const cryptoPaymentSchema = new Schema({
   },
 }, { _id: false });
 
+// Attachment sub-schema
+const attachmentSchema = new Schema({
+  fileId: { type: String, required: true },
+  fileUniqueId: { type: String, required: true },
+  fileType: { type: String, enum: ['photo', 'document'], required: true },
+  fileName: { type: String },
+  mimeType: { type: String },
+  fileSize: { type: Number },
+  uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  uploadedAt: { type: Date, default: Date.now },
+  caption: { type: String },
+  dealStage: { type: String },
+}, { _id: true });
+
 // Deal statuses
 export const DEAL_STATUSES = [
   'draft',
@@ -149,6 +163,20 @@ export interface ICryptoPayment {
   status: CryptoPaymentStatus;
 }
 
+export interface IAttachment {
+  _id?: Types.ObjectId;
+  fileId: string;
+  fileUniqueId: string;
+  fileType: 'photo' | 'document';
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+  uploadedBy: Types.ObjectId;
+  uploadedAt: Date;
+  caption?: string;
+  dealStage: string;
+}
+
 export interface IDeal extends Document {
   dealId: string;
   buyer: Types.ObjectId;
@@ -186,6 +214,7 @@ export interface IDeal extends Document {
     buyer: number[];
     seller: number[];
   };
+  attachments: IAttachment[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -224,6 +253,7 @@ const dealSchema = new Schema<IDeal>(
       buyer: [{ type: Number }],
       seller: [{ type: Number }],
     },
+    attachments: [attachmentSchema],
   },
   { timestamps: true }
 );

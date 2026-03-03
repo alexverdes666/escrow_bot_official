@@ -195,6 +195,9 @@ export function setupCommands(bot: Telegraf<BotContext>) {
 
   // /cancel command
   bot.command('cancel', async (ctx) => {
+    const session = getSession(ctx);
+    session.pendingAttachment = undefined;
+    session.pendingDisputeEvidence = undefined;
     await ctx.scene.leave();
     await ctx.reply('Operation cancelled. Use /newdeal to start again.');
   });

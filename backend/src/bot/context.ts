@@ -43,6 +43,8 @@ export interface BotSessionData extends Scenes.WizardSessionData {
   dealCreation?: DealCreationState;
   dispute?: DisputeState;
   pendingSellerWallet?: string; // dealId awaiting seller wallet address for crypto
+  pendingAttachment?: string; // dealId awaiting file upload
+  pendingDisputeEvidence?: string; // disputeId awaiting evidence file
 }
 
 export type BotContext = Context & Scenes.WizardContext<BotSessionData> & {

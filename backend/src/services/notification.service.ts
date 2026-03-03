@@ -26,6 +26,28 @@ export class NotificationService {
     }
   }
 
+  async sendPhotoToUser(telegramId: number, fileId: string, caption?: string): Promise<void> {
+    try {
+      await this.bot.telegram.sendPhoto(telegramId, fileId, {
+        caption,
+        parse_mode: 'HTML',
+      });
+    } catch (error) {
+      logger.error(`Failed to send photo to ${telegramId}:`, error);
+    }
+  }
+
+  async sendDocumentToUser(telegramId: number, fileId: string, caption?: string): Promise<void> {
+    try {
+      await this.bot.telegram.sendDocument(telegramId, fileId, {
+        caption,
+        parse_mode: 'HTML',
+      });
+    } catch (error) {
+      logger.error(`Failed to send document to ${telegramId}:`, error);
+    }
+  }
+
   async notifyDealCreated(deal: any): Promise<void> {
     const seller = await User.findById(deal.seller);
     const buyer = await User.findById(deal.buyer);

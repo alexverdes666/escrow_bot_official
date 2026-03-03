@@ -1,6 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext, getSession } from '../context';
-import { Deal, User, AuditLog } from '../../models';
+import { Deal, User, AuditLog, Dispute } from '../../models';
 import { getNotificationService } from '../../services/notification.service';
 import { formatDealSummary, formatDealStatus } from '../utils/formatDeal';
 import { websiteButtonRow } from '../utils/safeUrl';
@@ -75,6 +75,16 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
 
     if (['draft', 'pending_agreement', 'active'].includes(deal.status)) {
       buttons.push([Markup.button.callback('❌ Cancel Deal', `cancel:${dealId}`)]);
+    }
+
+    // Attachment buttons for active deal states
+    const attachmentStatuses = ['pending_agreement', 'active', 'awaiting_deposit', 'funded', 'payment_confirmed', 'in_progress', 'delivered', 'disputed'];
+    if (attachmentStatuses.includes(deal.status) && (isBuyer || isSeller)) {
+      const attachCount = deal.attachments?.length || 0;
+      buttons.push([
+        Markup.button.callback('📎 Attach File', `attach:${dealId}`),
+        Markup.button.callback(`📂 Files (${attachCount})`, `attachments:${dealId}`),
+      ]);
     }
 
     buttons.push(...websiteButtonRow('🌐 View on Website', `/deals/${dealId}`));
@@ -413,9 +423,324 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
     );
   });
 
+  // --- Attachment callbacks ---
+
+  // User clicks "Attach File" button
+  bot.action(/^attach:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+
+    const deal = await Deal.findOne({ dealId });
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    const userId = ctx.dbUser?._id?.toString();
+    const isParticipant = deal.buyer.toString() === userId || deal.seller.toString() === userId;
+    if (!isParticipant) {
+      await ctx.reply('You are not a participant in this deal.');
+      return;
+    }
+
+    getSession(ctx).pendingAttachment = dealId;
+    await ctx.reply(
+      `📎 <b>Attach a file to deal ${dealId}</b>\n\n` +
+      `Send a photo or document now.\nUse /cancel to abort.`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // List all deal attachments
+  bot.action(/^attachments:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+
+    const deal = await Deal.findOne({ dealId })
+      .populate('attachments.uploadedBy', 'username firstName')
+      .lean();
+
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    const attachments = deal.attachments || [];
+    if (attachments.length === 0) {
+      await ctx.reply(
+        `📂 <b>No attachments for ${dealId}</b>\n\nNo files have been attached yet.`,
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('📎 Attach File', `attach:${dealId}`)],
+            [Markup.button.callback('◀️ Back to Deal', `view:${dealId}`)],
+          ]),
+        }
+      );
+      return;
+    }
+
+    let text = `📂 <b>Attachments for ${dealId}</b> (${attachments.length})\n\n`;
+    const buttons: any[][] = [];
+
+    attachments.forEach((att: any, i: number) => {
+      const uploader = att.uploadedBy?.username || att.uploadedBy?.firstName || 'Unknown';
+      const icon = att.fileType === 'photo' ? '🖼' : '📄';
+      const name = att.fileName || (att.fileType === 'photo' ? 'Photo' : 'Document');
+      const date = new Date(att.uploadedAt).toLocaleDateString();
+      text += `${i + 1}. ${icon} <b>${name}</b>\n   By @${uploader} · ${date}\n\n`;
+      buttons.push([
+        Markup.button.callback(`${icon} View: ${name.slice(0, 20)}`, `viewfile:${dealId}:${att._id}`),
+      ]);
+    });
+
+    buttons.push([
+      Markup.button.callback('📎 Attach More', `attach:${dealId}`),
+      Markup.button.callback('◀️ Back to Deal', `view:${dealId}`),
+    ]);
+
+    await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
+  });
+
+  // View a specific attachment
+  bot.action(/^viewfile:(.+):(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+    const attId = ctx.match[2];
+
+    const deal = await Deal.findOne({ dealId });
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    const attachment = deal.attachments.find((a: any) => a._id?.toString() === attId);
+    if (!attachment) {
+      await ctx.reply('Attachment not found.');
+      return;
+    }
+
+    const caption = attachment.caption || attachment.fileName || undefined;
+    if (attachment.fileType === 'photo') {
+      await ctx.replyWithPhoto(attachment.fileId, { caption });
+    } else {
+      await ctx.replyWithDocument(attachment.fileId, { caption });
+    }
+  });
+
+  // Initiate dispute evidence file submission
+  bot.action(/^dispute_evidence:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const disputeId = ctx.match[1];
+
+    const dispute = await Dispute.findById(disputeId);
+    if (!dispute) {
+      await ctx.reply('Dispute not found.');
+      return;
+    }
+
+    getSession(ctx).pendingDisputeEvidence = disputeId;
+    await ctx.reply(
+      `⚖️ <b>Submit Evidence</b>\n\n` +
+      `Send a photo or document as evidence for this dispute.\nUse /cancel to abort.`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // Helper: notify counterparty about new attachment
+  async function notifyAttachment(deal: any, uploaderId: string, attachment: any) {
+    const notificationService = getNotificationService();
+    if (!notificationService) return;
+
+    const isBuyerUploader = deal.buyer.toString() === uploaderId;
+    const counterpartyDoc = await User.findById(isBuyerUploader ? deal.seller : deal.buyer);
+    if (!counterpartyDoc) return;
+
+    const uploaderDoc = await User.findById(uploaderId);
+    const uploaderName = uploaderDoc?.username || uploaderDoc?.firstName || 'Someone';
+    const icon = attachment.fileType === 'photo' ? '🖼' : '📄';
+    const fileName = attachment.fileName || (attachment.fileType === 'photo' ? 'Photo' : 'Document');
+
+    await notificationService.sendToUser(
+      counterpartyDoc.telegramId,
+      `${icon} <b>New Attachment — ${deal.dealId}</b>\n\n` +
+      `@${uploaderName} attached: <b>${fileName}</b>`,
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📂 View Attachments', callback_data: `attachments:${deal.dealId}` },
+          ]],
+        },
+      }
+    );
+  }
+
+  // Handle photo uploads
+  bot.on('photo', async (ctx, next) => {
+    const session = getSession(ctx);
+
+    // Deal attachment
+    if (session.pendingAttachment) {
+      const dealId = session.pendingAttachment;
+      const deal = await Deal.findOne({ dealId });
+      if (!deal) {
+        session.pendingAttachment = undefined;
+        await ctx.reply('Deal not found. Upload cancelled.');
+        return;
+      }
+
+      const photo = ctx.message.photo[ctx.message.photo.length - 1]; // largest size
+      const attachment = {
+        fileId: photo.file_id,
+        fileUniqueId: photo.file_unique_id,
+        fileType: 'photo' as const,
+        fileSize: photo.file_size,
+        uploadedBy: ctx.dbUser!._id,
+        uploadedAt: new Date(),
+        caption: ctx.message.caption || undefined,
+        dealStage: deal.status,
+      };
+
+      deal.attachments.push(attachment);
+      await deal.save();
+      session.pendingAttachment = undefined;
+
+      await ctx.reply(
+        `✅ Photo attached to deal <b>${dealId}</b>`,
+        { parse_mode: 'HTML' }
+      );
+
+      await notifyAttachment(deal, ctx.dbUser!._id.toString(), attachment);
+      return;
+    }
+
+    // Dispute evidence
+    if (session.pendingDisputeEvidence) {
+      const disputeId = session.pendingDisputeEvidence;
+      const dispute = await Dispute.findById(disputeId);
+      if (!dispute) {
+        session.pendingDisputeEvidence = undefined;
+        await ctx.reply('Dispute not found. Upload cancelled.');
+        return;
+      }
+
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
+      dispute.evidence.push({
+        submittedBy: ctx.dbUser!._id,
+        type: 'image',
+        content: photo.file_id,
+        fileUniqueId: photo.file_unique_id,
+        fileSize: photo.file_size,
+        submittedAt: new Date(),
+      });
+      await dispute.save();
+      session.pendingDisputeEvidence = undefined;
+
+      await ctx.reply(
+        `✅ Photo evidence submitted for dispute on deal <b>${dispute.dealId}</b>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    return next();
+  });
+
+  // Handle document uploads
+  bot.on('document', async (ctx, next) => {
+    const session = getSession(ctx);
+
+    // Deal attachment
+    if (session.pendingAttachment) {
+      const dealId = session.pendingAttachment;
+      const deal = await Deal.findOne({ dealId });
+      if (!deal) {
+        session.pendingAttachment = undefined;
+        await ctx.reply('Deal not found. Upload cancelled.');
+        return;
+      }
+
+      const doc = ctx.message.document;
+      const attachment = {
+        fileId: doc.file_id,
+        fileUniqueId: doc.file_unique_id,
+        fileType: 'document' as const,
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        fileSize: doc.file_size,
+        uploadedBy: ctx.dbUser!._id,
+        uploadedAt: new Date(),
+        caption: ctx.message.caption || undefined,
+        dealStage: deal.status,
+      };
+
+      deal.attachments.push(attachment);
+      await deal.save();
+      session.pendingAttachment = undefined;
+
+      await ctx.reply(
+        `✅ Document <b>${doc.file_name || 'file'}</b> attached to deal <b>${dealId}</b>`,
+        { parse_mode: 'HTML' }
+      );
+
+      await notifyAttachment(deal, ctx.dbUser!._id.toString(), attachment);
+      return;
+    }
+
+    // Dispute evidence
+    if (session.pendingDisputeEvidence) {
+      const disputeId = session.pendingDisputeEvidence;
+      const dispute = await Dispute.findById(disputeId);
+      if (!dispute) {
+        session.pendingDisputeEvidence = undefined;
+        await ctx.reply('Dispute not found. Upload cancelled.');
+        return;
+      }
+
+      const doc = ctx.message.document;
+      dispute.evidence.push({
+        submittedBy: ctx.dbUser!._id,
+        type: 'document',
+        content: doc.file_id,
+        fileName: doc.file_name,
+        fileUniqueId: doc.file_unique_id,
+        mimeType: doc.mime_type,
+        fileSize: doc.file_size,
+        submittedAt: new Date(),
+      });
+      await dispute.save();
+      session.pendingDisputeEvidence = undefined;
+
+      await ctx.reply(
+        `✅ Document evidence submitted for dispute on deal <b>${dispute.dealId}</b>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    return next();
+  });
+
   // Handle text messages for seller wallet address
   bot.on('text', async (ctx, next) => {
     const session = getSession(ctx);
+
+    // Guard: if waiting for attachment, remind user to send a file
+    if (session.pendingAttachment) {
+      await ctx.reply(
+        'Please send a photo or document, or use /cancel to abort.',
+      );
+      return;
+    }
+
+    // Guard: if waiting for dispute evidence, remind user to send a file
+    if (session.pendingDisputeEvidence) {
+      await ctx.reply(
+        'Please send a photo or document as evidence, or use /cancel to abort.',
+      );
+      return;
+    }
+
     const pendingDealId = session.pendingSellerWallet;
 
     if (!pendingDealId) return next();
