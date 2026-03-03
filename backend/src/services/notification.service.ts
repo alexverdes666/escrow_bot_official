@@ -1,6 +1,7 @@
 import { Telegraf, Context } from 'telegraf';
 import { User, IDeal, IDispute } from '../models';
 import { logger } from '../utils/logger';
+import { env } from '../config/env';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || '';
 const isHttps = FRONTEND_URL.startsWith('https');
@@ -166,11 +167,13 @@ export class NotificationService {
     if (!buyer || !deal.cryptoPayment) return;
 
     const cp = deal.cryptoPayment;
+    const feePercent = env.CRYPTO_ENABLED ? env.CRYPTO_FEE_PERCENT : 2;
     const msg = `💰 <b>Deposit Address for ${deal.dealId}</b>\n\n` +
       `Send exactly <b>${cp.expectedAmountHuman}</b> to:\n\n` +
       `<code>${cp.depositAddress}</code>\n\n` +
       `Chain: <b>${cp.chain}</b>${cp.token ? ` (${cp.token})` : ''}\n` +
-      `Network: <b>${cp.network}</b>\n\n` +
+      `Network: <b>${cp.network}</b>\n` +
+      `Platform fee: <b>${feePercent}%</b> (deducted on release)\n\n` +
       `⚠️ Send the exact amount. The system will detect your deposit automatically.`;
 
     await this.sendToUser(buyer.telegramId, msg, {
@@ -241,18 +244,22 @@ export class NotificationService {
 
     const cp = deal.cryptoPayment;
 
+    const feeInfo = cp.platformFeeAmount
+      ? `\nPlatform fee: <b>${cp.platformFeeAmount}</b> (${env.CRYPTO_FEE_PERCENT}%)`
+      : '';
+
     await this.sendToUser(
       seller.telegramId,
       `💸 <b>Funds Released — ${deal.dealId}</b>\n\n` +
       `Crypto funds have been sent to your wallet.\n` +
       `TxHash: <code>${cp.releaseTxHash}</code>\n` +
-      `Address: <code>${cp.sellerAddress}</code>`
+      `Address: <code>${cp.sellerAddress}</code>${feeInfo}`
     );
 
     await this.sendToUser(
       buyer.telegramId,
       `✅ <b>Deal ${deal.dealId} — Funds Released</b>\n\n` +
-      `Crypto escrow funds have been released to the seller.`
+      `Crypto escrow funds have been released to the seller.${feeInfo}`
     );
   }
 
