@@ -37,6 +37,17 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
     const isBuyer = (deal.buyer as any)._id?.toString() === userId;
     const isSeller = (deal.seller as any)._id?.toString() === userId;
 
+    // Show agree/decline for pending deals where this user hasn't agreed yet
+    if (deal.status === 'pending_agreement') {
+      const hasAgreed = (isBuyer && deal.buyerAgreed) || (isSeller && deal.sellerAgreed);
+      if (!hasAgreed && (isBuyer || isSeller)) {
+        buttons.push([
+          Markup.button.callback('✅ I Agree', `agree:${dealId}`),
+          Markup.button.callback('❌ Decline', `decline:${dealId}`),
+        ]);
+      }
+    }
+
     if (deal.status === 'awaiting_deposit') {
       if (isBuyer) {
         buttons.push([Markup.button.callback('🔄 Check Payment', `check_payment:${dealId}`)]);

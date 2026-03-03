@@ -30,8 +30,10 @@ export class NotificationService {
     const buyer = await User.findById(deal.buyer);
     if (!seller || !buyer) return;
 
-    const counterparty = deal.createdBy.toString() === deal.buyer.toString() ? seller : buyer;
-    const creator = deal.createdBy.toString() === deal.buyer.toString() ? buyer : seller;
+    const createdById = deal.createdBy._id?.toString() || deal.createdBy.toString();
+    const buyerId = deal.buyer._id?.toString() || deal.buyer.toString();
+    const counterparty = createdById === buyerId ? seller : buyer;
+    const creator = createdById === buyerId ? buyer : seller;
 
     await this.sendToUser(
       counterparty.telegramId,
