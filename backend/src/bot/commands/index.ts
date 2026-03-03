@@ -1,6 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext, getSession } from '../context';
-import { Deal, User } from '../../models';
+import { Deal, User, Dispute } from '../../models';
 import { env } from '../../config/env';
 import { formatDealListItem, formatDealStatus } from '../utils/formatDeal';
 import { websiteButtonRow } from '../utils/safeUrl';
@@ -189,6 +189,63 @@ export function setupCommands(bot: Telegraf<BotContext>) {
       `This link expires in <b>5 minutes</b> and can only be used once.`,
       Markup.inlineKeyboard([
         [Markup.button.url('🌐 Log In to Website', loginUrl)],
+      ])
+    );
+  });
+
+  // /profile command
+  bot.command('profile', async (ctx) => {
+    if (!ctx.dbUser) {
+      await ctx.reply('Please /start the bot first.');
+      return;
+    }
+
+    const userId = ctx.dbUser._id;
+
+    const [totalDeals, asBuyer, asSeller, completedDeals, activeDeals, disputeCount] = await Promise.all([
+      Deal.countDocuments({ $or: [{ buyer: userId }, { seller: userId }] }),
+      Deal.countDocuments({ buyer: userId }),
+      Deal.countDocuments({ seller: userId }),
+      Deal.countDocuments({
+        $or: [{ buyer: userId }, { seller: userId }],
+        status: 'completed',
+      }),
+      Deal.countDocuments({
+        $or: [{ buyer: userId }, { seller: userId }],
+        status: { $nin: ['cancelled', 'completed', 'resolved'] },
+      }),
+      Dispute.countDocuments({
+        $or: [{ openedBy: userId }],
+      }),
+    ]);
+
+    const rep = ctx.dbUser.reputation;
+    const memberSince = ctx.dbUser.createdAt
+      ? new Date(ctx.dbUser.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      : 'Unknown';
+
+    const name = ctx.dbUser.username ? `@${ctx.dbUser.username}` : ctx.dbUser.firstName;
+
+    await ctx.replyWithHTML(
+      `👤 <b>Profile — ${name}</b>\n\n` +
+
+      `⭐ <b>Reputation Score:</b> ${rep.score}\n` +
+      `📅 Member since: ${memberSince}\n\n` +
+
+      `━━━ <b>Deal Statistics</b> ━━━\n` +
+      `📊 Total Deals: <b>${totalDeals}</b>\n` +
+      `   ├ As Buyer: ${asBuyer}\n` +
+      `   └ As Seller: ${asSeller}\n` +
+      `✅ Completed: <b>${completedDeals}</b>\n` +
+      `🔄 Active: <b>${activeDeals}</b>\n\n` +
+
+      `━━━ <b>Dispute Record</b> ━━━\n` +
+      `⚖️ Total Disputes: <b>${rep.disputesTotal}</b>\n` +
+      `🏆 Won: <b>${rep.disputesWon}</b>\n` +
+      `❌ Lost: <b>${rep.disputesLost}</b>\n`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('📋 My Deals', 'cmd:mydeals')],
+        ...websiteButtonRow('🌐 View on Website', '/profile'),
       ])
     );
   });

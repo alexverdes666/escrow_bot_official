@@ -29,6 +29,17 @@ export function createBot(): Telegraf<BotContext> {
   // Callbacks (inline keyboard actions)
   setupCallbacks(bot);
 
+  // Set bot command menu
+  bot.telegram.setMyCommands([
+    { command: 'start', description: 'Start the bot' },
+    { command: 'newdeal', description: 'Create a new escrow deal' },
+    { command: 'mydeals', description: 'View your active deals' },
+    { command: 'profile', description: 'View your profile & stats' },
+    { command: 'login', description: 'Get website login link' },
+    { command: 'help', description: 'Get help' },
+    { command: 'cancel', description: 'Cancel current operation' },
+  ]).catch(err => logger.error('Failed to set bot commands:', err));
+
   // Error handler
   bot.catch((err: unknown, ctx: BotContext) => {
     logger.error(`Bot error for ${ctx.updateType}:`, err);
