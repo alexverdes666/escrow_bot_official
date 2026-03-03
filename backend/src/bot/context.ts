@@ -44,6 +44,7 @@ export interface BotSessionData extends Scenes.WizardSessionData {
   dispute?: DisputeState;
   pendingSellerWallet?: string; // dealId awaiting seller wallet address for crypto
   pendingAttachment?: string; // dealId awaiting file upload
+  pendingDeliverable?: string; // dealId awaiting deliverable file upload
   pendingDisputeEvidence?: string; // disputeId awaiting evidence file
 }
 

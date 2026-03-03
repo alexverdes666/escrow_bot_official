@@ -56,12 +56,19 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
 
     if (deal.status === 'funded' || deal.status === 'payment_confirmed' || deal.status === 'in_progress') {
       if (isSeller) {
-        buttons.push([Markup.button.callback('📦 Mark Delivered', `deliver:${dealId}`)]);
+        buttons.push([Markup.button.callback('📤 Upload Deliverables', `deliver:${dealId}`)]);
       }
+    }
+
+    if (deal.status === 'pending_review') {
+      buttons.push([Markup.button.callback('🔍 Under Admin Review', `noop:${dealId}`)]);
     }
 
     if (deal.status === 'delivered') {
       if (isBuyer) {
+        buttons.push([
+          Markup.button.callback('📥 View Deliverables', `view_deliverables:${dealId}`),
+        ]);
         buttons.push([
           Markup.button.callback('✅ Confirm Delivery', `confirm:${dealId}`),
           Markup.button.callback('⚖️ Dispute', `dispute:${dealId}`),
@@ -69,7 +76,7 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
       }
     }
 
-    if (['active', 'payment_confirmed', 'in_progress', 'delivered'].includes(deal.status)) {
+    if (['active', 'payment_confirmed', 'pending_review', 'in_progress', 'delivered'].includes(deal.status)) {
       buttons.push([Markup.button.callback('⚖️ Open Dispute', `dispute:${dealId}`)]);
     }
 
@@ -267,7 +274,7 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
     });
   });
 
-  // Mark as delivered (seller)
+  // Upload deliverables (seller) — starts upload flow
   bot.action(/^deliver:(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('Processing...');
     const dealId = ctx.match[1];
@@ -279,53 +286,199 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
     }
 
     if (!['funded', 'payment_confirmed', 'in_progress'].includes(deal.status)) {
-      await ctx.reply(`Cannot mark as delivered. Current status: ${formatDealStatus(deal.status)}`);
+      await ctx.reply(`Cannot upload deliverables. Current status: ${formatDealStatus(deal.status)}`);
       return;
     }
 
     const isSeller = deal.seller.toString() === ctx.dbUser?._id?.toString();
     if (!isSeller) {
-      await ctx.reply('Only the seller can mark a deal as delivered.');
+      await ctx.reply('Only the seller can upload deliverables.');
       return;
     }
 
-    deal.status = 'delivered';
-    deal.deliveredAt = new Date();
+    getSession(ctx).pendingDeliverable = dealId;
 
-    // Set auto-release date
-    const autoReleaseDate = new Date();
-    autoReleaseDate.setDate(autoReleaseDate.getDate() + (deal.terms.autoReleaseDays || 3));
-    deal.terms.autoReleaseDate = autoReleaseDate;
+    await ctx.reply(
+      `📤 <b>Upload Deliverables for ${dealId}</b>\n\n` +
+      `Send photos or documents — the actual goods/data for this deal.\n` +
+      `Click <b>Done</b> when finished uploading.`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Done Uploading', `deliverable_done:${dealId}`)],
+          [Markup.button.callback('❌ Cancel', `deliverable_cancel:${dealId}`)],
+        ]),
+      }
+    );
+  });
 
+  // Re-upload deliverables (after rejection)
+  bot.action(/^upload_deliverable:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+
+    const deal = await Deal.findOne({ dealId });
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    const isSeller = deal.seller.toString() === ctx.dbUser?._id?.toString();
+    if (!isSeller) {
+      await ctx.reply('Only the seller can upload deliverables.');
+      return;
+    }
+
+    // Clear previous deliverables and reset review
+    deal.deliverables = [] as any;
+    deal.deliverableReview = undefined;
+    await deal.save();
+
+    getSession(ctx).pendingDeliverable = dealId;
+
+    await ctx.reply(
+      `📤 <b>Re-upload Deliverables for ${dealId}</b>\n\n` +
+      `Previous deliverables have been cleared.\n` +
+      `Send photos or documents. Click <b>Done</b> when finished.`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Done Uploading', `deliverable_done:${dealId}`)],
+          [Markup.button.callback('❌ Cancel', `deliverable_cancel:${dealId}`)],
+        ]),
+      }
+    );
+  });
+
+  // Seller clicks Done uploading deliverables
+  bot.action(/^deliverable_done:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+    const session = getSession(ctx);
+
+    session.pendingDeliverable = undefined;
+
+    const deal = await Deal.findOne({ dealId });
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    if (!deal.deliverables || deal.deliverables.length === 0) {
+      await ctx.reply(
+        `⚠️ No files uploaded yet. Please send at least one file before clicking Done.`,
+        {
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Done Uploading', `deliverable_done:${dealId}`)],
+            [Markup.button.callback('❌ Cancel', `deliverable_cancel:${dealId}`)],
+          ]),
+        }
+      );
+      session.pendingDeliverable = dealId;
+      return;
+    }
+
+    deal.status = 'pending_review';
+    deal.deliverableReview = {
+      status: 'pending',
+      submittedAt: new Date(),
+    } as any;
     deal.statusHistory.push({
-      status: 'delivered',
+      status: 'pending_review',
       changedBy: ctx.dbUser!._id,
       changedAt: new Date(),
-      note: 'Marked as delivered by seller',
+      note: `Seller uploaded ${deal.deliverables.length} deliverable(s) for admin review`,
     });
     await deal.save();
 
-    await ctx.editMessageText(
-      `📦 <b>Deal ${dealId} marked as delivered!</b>\n\n` +
-      `Buyer has been notified. Auto-release in ${deal.terms.autoReleaseDays} days if no dispute.`,
+    await ctx.reply(
+      `✅ <b>Deliverables submitted for ${dealId}</b>\n\n` +
+      `${deal.deliverables.length} file(s) uploaded. An admin will review them shortly.`,
       { parse_mode: 'HTML' }
     );
 
-    // Notify buyer
+    // Notify admin
     const populatedDeal = await Deal.findById(deal._id)
       .populate('buyer', 'username firstName telegramId')
       .populate('seller', 'username firstName telegramId');
 
     const notificationService = getNotificationService();
     if (notificationService && populatedDeal) {
-      await notificationService.notifyDelivery(populatedDeal);
+      await notificationService.notifyDeliverablesUploaded(populatedDeal);
     }
 
     await AuditLog.create({
-      action: 'deal_delivered',
+      action: 'deliverables_uploaded',
       performedBy: ctx.dbUser!._id,
       targetDeal: deal._id,
+      details: { fileCount: deal.deliverables.length },
     });
+  });
+
+  // Cancel deliverable upload
+  bot.action(/^deliverable_cancel:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx);
+    session.pendingDeliverable = undefined;
+
+    const dealId = ctx.match[1];
+    const deal = await Deal.findOne({ dealId });
+    if (deal) {
+      // Clear any partially uploaded deliverables
+      deal.deliverables = [] as any;
+      await deal.save();
+    }
+
+    await ctx.reply(`Upload cancelled for deal ${dealId}.`);
+  });
+
+  // Buyer views deliverables (only after approval)
+  bot.action(/^view_deliverables:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dealId = ctx.match[1];
+
+    const deal = await Deal.findOne({ dealId });
+    if (!deal) {
+      await ctx.reply('Deal not found.');
+      return;
+    }
+
+    const isBuyer = deal.buyer.toString() === ctx.dbUser?._id?.toString();
+    const isAdmin = ctx.dbUser?.role === 'admin';
+
+    if (!isBuyer && !isAdmin) {
+      await ctx.reply('Only the buyer can view deliverables.');
+      return;
+    }
+
+    if (deal.deliverableReview?.status !== 'approved') {
+      await ctx.reply('Deliverables are not yet approved by admin.');
+      return;
+    }
+
+    if (!deal.deliverables || deal.deliverables.length === 0) {
+      await ctx.reply('No deliverables found.');
+      return;
+    }
+
+    await ctx.reply(
+      `📥 <b>Deliverables for ${dealId}</b> (${deal.deliverables.length} files)\n\nSending files...`,
+      { parse_mode: 'HTML' }
+    );
+
+    for (const d of deal.deliverables) {
+      const caption = d.caption || d.fileName || undefined;
+      if (d.fileType === 'photo') {
+        await ctx.replyWithPhoto(d.fileId, { caption });
+      } else {
+        await ctx.replyWithDocument(d.fileId, { caption });
+      }
+    }
+  });
+
+  // No-op handler for informational buttons
+  bot.action(/^noop:/, async (ctx) => {
+    await ctx.answerCbQuery('This is just a status indicator.');
   });
 
   // Confirm delivery (buyer)
@@ -579,6 +732,34 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
   bot.on('photo', async (ctx, next) => {
     const session = getSession(ctx);
 
+    // Deliverable upload
+    if (session.pendingDeliverable) {
+      const dealId = session.pendingDeliverable;
+      const deal = await Deal.findOne({ dealId });
+      if (!deal) {
+        session.pendingDeliverable = undefined;
+        await ctx.reply('Deal not found. Upload cancelled.');
+        return;
+      }
+
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
+      deal.deliverables.push({
+        fileId: photo.file_id,
+        fileUniqueId: photo.file_unique_id,
+        fileType: 'photo',
+        fileSize: photo.file_size,
+        uploadedBy: ctx.dbUser!._id,
+        uploadedAt: new Date(),
+        caption: ctx.message.caption || undefined,
+      } as any);
+      await deal.save();
+
+      await ctx.reply(
+        `✅ Photo added to deliverables (${deal.deliverables.length} total).\nSend more or click Done.`
+      );
+      return;
+    }
+
     // Deal attachment
     if (session.pendingAttachment) {
       const dealId = session.pendingAttachment;
@@ -649,6 +830,37 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
   // Handle document uploads
   bot.on('document', async (ctx, next) => {
     const session = getSession(ctx);
+
+    // Deliverable upload
+    if (session.pendingDeliverable) {
+      const dealId = session.pendingDeliverable;
+      const deal = await Deal.findOne({ dealId });
+      if (!deal) {
+        session.pendingDeliverable = undefined;
+        await ctx.reply('Deal not found. Upload cancelled.');
+        return;
+      }
+
+      const doc = ctx.message.document;
+      deal.deliverables.push({
+        fileId: doc.file_id,
+        fileUniqueId: doc.file_unique_id,
+        fileType: 'document',
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        fileSize: doc.file_size,
+        uploadedBy: ctx.dbUser!._id,
+        uploadedAt: new Date(),
+        caption: ctx.message.caption || undefined,
+      } as any);
+      await deal.save();
+
+      await ctx.reply(
+        `✅ Document <b>${doc.file_name || 'file'}</b> added to deliverables (${deal.deliverables.length} total).\nSend more or click Done.`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
 
     // Deal attachment
     if (session.pendingAttachment) {
@@ -724,6 +936,14 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
   // Handle text messages for seller wallet address
   bot.on('text', async (ctx, next) => {
     const session = getSession(ctx);
+
+    // Guard: if waiting for deliverable, remind user to send a file
+    if (session.pendingDeliverable) {
+      await ctx.reply(
+        'Please send a photo or document as a deliverable, or click Cancel.',
+      );
+      return;
+    }
 
     // Guard: if waiting for attachment, remind user to send a file
     if (session.pendingAttachment) {

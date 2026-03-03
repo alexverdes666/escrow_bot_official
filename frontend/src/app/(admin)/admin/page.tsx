@@ -2,7 +2,7 @@
 
 import { useAdminAnalytics } from '@/hooks/useDeals';
 import Link from 'next/link';
-import { BarChart3, Users, Scale, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
+import { BarChart3, Users, Scale, CheckCircle, AlertTriangle, FileText, Search } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { data: analytics, isLoading } = useAdminAnalytics();
@@ -15,6 +15,7 @@ export default function AdminDashboard() {
     { label: 'Total Deals', value: analytics?.totalDeals || 0, icon: <FileText className="w-6 h-6" />, color: 'text-blue-600 bg-blue-50' },
     { label: 'Active Deals', value: analytics?.activeDeals || 0, icon: <BarChart3 className="w-6 h-6" />, color: 'text-purple-600 bg-purple-50' },
     { label: 'Completed', value: analytics?.completedDeals || 0, icon: <CheckCircle className="w-6 h-6" />, color: 'text-green-600 bg-green-50' },
+    { label: 'Pending Reviews', value: analytics?.dealsByStatus?.pending_review || 0, icon: <Search className="w-6 h-6" />, color: 'text-amber-600 bg-amber-50' },
     { label: 'Open Disputes', value: analytics?.openDisputes || 0, icon: <AlertTriangle className="w-6 h-6" />, color: 'text-red-600 bg-red-50' },
     { label: 'Total Users', value: analytics?.totalUsers || 0, icon: <Users className="w-6 h-6" />, color: 'text-indigo-600 bg-indigo-50' },
   ];
@@ -24,7 +25,7 @@ export default function AdminDashboard() {
       <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {stats.map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${s.color}`}>

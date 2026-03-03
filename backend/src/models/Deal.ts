@@ -91,6 +91,27 @@ const attachmentSchema = new Schema({
   dealStage: { type: String },
 }, { _id: true });
 
+// Deliverable sub-schema
+const deliverableSchema = new Schema({
+  fileId: { type: String, required: true },
+  fileUniqueId: { type: String, required: true },
+  fileType: { type: String, enum: ['photo', 'document'], required: true },
+  fileName: { type: String },
+  mimeType: { type: String },
+  fileSize: { type: Number },
+  uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  uploadedAt: { type: Date, default: Date.now },
+  caption: { type: String },
+}, { _id: true });
+
+const deliverableReviewSchema = new Schema({
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  reviewedAt: { type: Date },
+  rejectionReason: { type: String },
+  submittedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 // Deal statuses
 export const DEAL_STATUSES = [
   'draft',
@@ -99,6 +120,7 @@ export const DEAL_STATUSES = [
   'awaiting_deposit',
   'funded',
   'payment_confirmed',
+  'pending_review',
   'in_progress',
   'delivered',
   'completed',
@@ -163,6 +185,27 @@ export interface ICryptoPayment {
   status: CryptoPaymentStatus;
 }
 
+export interface IDeliverable {
+  _id?: Types.ObjectId;
+  fileId: string;
+  fileUniqueId: string;
+  fileType: 'photo' | 'document';
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+  uploadedBy: Types.ObjectId;
+  uploadedAt: Date;
+  caption?: string;
+}
+
+export interface IDeliverableReview {
+  status: 'pending' | 'approved' | 'rejected';
+  reviewedBy?: Types.ObjectId;
+  reviewedAt?: Date;
+  rejectionReason?: string;
+  submittedAt: Date;
+}
+
 export interface IAttachment {
   _id?: Types.ObjectId;
   fileId: string;
@@ -215,6 +258,8 @@ export interface IDeal extends Document {
     seller: number[];
   };
   attachments: IAttachment[];
+  deliverables: IDeliverable[];
+  deliverableReview?: IDeliverableReview;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -254,6 +299,8 @@ const dealSchema = new Schema<IDeal>(
       seller: [{ type: Number }],
     },
     attachments: [attachmentSchema],
+    deliverables: [deliverableSchema],
+    deliverableReview: { type: deliverableReviewSchema, default: undefined },
   },
   { timestamps: true }
 );

@@ -55,6 +55,17 @@ export function useAdminAnalytics() {
   });
 }
 
+export function useAdminDealDeliverables(dealId: string) {
+  return useQuery({
+    queryKey: ['admin-deal-deliverables', dealId],
+    queryFn: async () => {
+      const { data } = await api.get(`/admin/deals/${dealId}/deliverables`);
+      return data;
+    },
+    enabled: !!dealId,
+  });
+}
+
 export function useAdminDeals(params?: Record<string, string>) {
   return useQuery({
     queryKey: ['admin-deals', params],

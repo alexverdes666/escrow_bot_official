@@ -304,6 +304,145 @@ adminRoutes.post('/deals/:dealId/release-crypto', async (req: AuthRequest, res: 
   }
 });
 
+// Get deal deliverables for review
+adminRoutes.get('/deals/:dealId/deliverables', async (req: AuthRequest, res: Response) => {
+  try {
+    const deal = await Deal.findOne({ dealId: req.params.dealId })
+      .populate('buyer', 'username firstName telegramId')
+      .populate('seller', 'username firstName telegramId')
+      .populate('deliverables.uploadedBy', 'username firstName')
+      .lean();
+
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    res.json(deal);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch deliverables' });
+  }
+});
+
+// Approve deliverables
+adminRoutes.post('/deals/:dealId/deliverables/approve', async (req: AuthRequest, res: Response) => {
+  try {
+    const deal = await Deal.findOne({ dealId: req.params.dealId });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    if (deal.status !== 'pending_review') {
+      res.status(400).json({ error: 'Deal is not pending review' });
+      return;
+    }
+
+    deal.deliverableReview = {
+      status: 'approved',
+      reviewedBy: req.user!.userId as any,
+      reviewedAt: new Date(),
+      submittedAt: deal.deliverableReview?.submittedAt || new Date(),
+    } as any;
+
+    deal.status = 'delivered';
+    deal.deliveredAt = new Date();
+
+    // Set auto-release date
+    const autoReleaseDate = new Date();
+    autoReleaseDate.setDate(autoReleaseDate.getDate() + (deal.terms.autoReleaseDays || 3));
+    deal.terms.autoReleaseDate = autoReleaseDate;
+
+    deal.statusHistory.push({
+      status: 'delivered',
+      changedBy: req.user!.userId as any,
+      changedAt: new Date(),
+      note: 'Deliverables approved by admin',
+    });
+    await deal.save();
+
+    await AuditLog.create({
+      action: 'deliverables_approved',
+      performedBy: req.user!.userId,
+      targetDeal: deal._id,
+    });
+
+    // Notify both parties
+    const populatedDeal = await Deal.findById(deal._id)
+      .populate('buyer', 'username firstName telegramId')
+      .populate('seller', 'username firstName telegramId');
+
+    const notificationService = getNotificationService();
+    if (notificationService && populatedDeal) {
+      await notificationService.notifyDeliverablesApproved(populatedDeal);
+    }
+
+    res.json(deal);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to approve deliverables' });
+  }
+});
+
+// Reject deliverables
+adminRoutes.post('/deals/:dealId/deliverables/reject', async (req: AuthRequest, res: Response) => {
+  try {
+    const { reason } = req.body;
+    if (!reason) {
+      res.status(400).json({ error: 'Rejection reason is required' });
+      return;
+    }
+
+    const deal = await Deal.findOne({ dealId: req.params.dealId });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    if (deal.status !== 'pending_review') {
+      res.status(400).json({ error: 'Deal is not pending review' });
+      return;
+    }
+
+    deal.deliverableReview = {
+      status: 'rejected',
+      reviewedBy: req.user!.userId as any,
+      reviewedAt: new Date(),
+      rejectionReason: reason,
+      submittedAt: deal.deliverableReview?.submittedAt || new Date(),
+    } as any;
+
+    deal.status = 'payment_confirmed';
+    deal.statusHistory.push({
+      status: 'payment_confirmed',
+      changedBy: req.user!.userId as any,
+      changedAt: new Date(),
+      note: `Deliverables rejected: ${reason}`,
+    });
+    await deal.save();
+
+    await AuditLog.create({
+      action: 'deliverables_rejected',
+      performedBy: req.user!.userId,
+      targetDeal: deal._id,
+      details: { reason },
+    });
+
+    // Notify both parties
+    const populatedDeal = await Deal.findById(deal._id)
+      .populate('buyer', 'username firstName telegramId')
+      .populate('seller', 'username firstName telegramId');
+
+    const notificationService = getNotificationService();
+    if (notificationService && populatedDeal) {
+      await notificationService.notifyDeliverablesRejected(populatedDeal, reason);
+    }
+
+    res.json(deal);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reject deliverables' });
+  }
+});
+
 // Analytics
 adminRoutes.get('/analytics', async (_req: AuthRequest, res: Response) => {
   try {
@@ -316,7 +455,7 @@ adminRoutes.get('/analytics', async (_req: AuthRequest, res: Response) => {
       dealsByStatus,
     ] = await Promise.all([
       Deal.countDocuments(),
-      Deal.countDocuments({ status: { $in: ['active', 'awaiting_deposit', 'funded', 'payment_confirmed', 'in_progress', 'delivered'] } }),
+      Deal.countDocuments({ status: { $in: ['active', 'awaiting_deposit', 'funded', 'payment_confirmed', 'pending_review', 'in_progress', 'delivered'] } }),
       Deal.countDocuments({ status: 'completed' }),
       Dispute.countDocuments({ status: { $in: ['open', 'under_review'] } }),
       User.countDocuments(),

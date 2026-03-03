@@ -150,6 +150,99 @@ export default function DealDetailPage() {
         )}
       </div>
 
+      {/* Deliverables Section */}
+      {(() => {
+        const hasDeliverables = deal.deliverables?.length > 0;
+        const reviewStatus = deal.deliverableReview?.status;
+        const isApproved = reviewStatus === 'approved';
+
+        if (!hasDeliverables && !deal.deliverableReview) return null;
+
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+            <h2 className="font-semibold mb-3 flex items-center gap-2">
+              Deliverables
+              {reviewStatus === 'pending' && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Under Review</span>
+              )}
+              {isApproved && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Approved</span>
+              )}
+              {reviewStatus === 'rejected' && (
+                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Rejected</span>
+              )}
+            </h2>
+
+            {isBuyer && !isApproved && (
+              <p className="text-sm text-gray-500 mb-3">
+                {reviewStatus === 'pending'
+                  ? 'Deliverables are being reviewed by admin. You will get access once approved.'
+                  : reviewStatus === 'rejected'
+                  ? 'Deliverables were rejected. Waiting for seller to re-upload.'
+                  : 'Waiting for seller to upload deliverables.'}
+              </p>
+            )}
+
+            {!isBuyer && deal.deliverableReview?.rejectionReason && (
+              <p className="text-sm text-red-600 mb-3">
+                Rejection reason: {deal.deliverableReview.rejectionReason}
+              </p>
+            )}
+
+            {hasDeliverables && (isBuyer ? isApproved : true) && (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {deal.deliverables.map((d: any) => {
+                  const fileUrl = `${api.defaults.baseURL}/deals/${deal.dealId}/deliverables/${d._id}/file`;
+                  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+                  const authedUrl = token ? `${fileUrl}?token=${token}` : fileUrl;
+                  const isPhoto = d.fileType === 'photo';
+
+                  return (
+                    <div key={d._id} className="border border-gray-100 rounded-lg overflow-hidden">
+                      {isPhoto ? (
+                        <a href={authedUrl} target="_blank" rel="noopener noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={authedUrl}
+                            alt={d.caption || 'Deliverable'}
+                            className="w-full h-40 object-cover bg-gray-100"
+                            loading="lazy"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          href={authedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center h-40 bg-gray-50 hover:bg-gray-100 transition-colors"
+                        >
+                          <FileText className="w-10 h-10 text-gray-400" />
+                        </a>
+                      )}
+                      <div className="p-2">
+                        <p className="text-sm font-medium truncate">
+                          {d.fileName || (isPhoto ? 'Photo' : 'Document')}
+                        </p>
+                        {d.caption && (
+                          <p className="text-xs text-gray-500 mt-1 truncate">{d.caption}</p>
+                        )}
+                        <a
+                          href={authedUrl}
+                          download={d.fileName || true}
+                          className="mt-2 inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700"
+                        >
+                          <Download className="w-3 h-3" /> Download
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Attachments */}
       {deal.attachments?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">

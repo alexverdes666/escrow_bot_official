@@ -7,6 +7,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   pending_agreement: { label: 'Pending', className: 'bg-yellow-100 text-yellow-700' },
   active: { label: 'Active', className: 'bg-blue-100 text-blue-700' },
   payment_confirmed: { label: 'Paid', className: 'bg-indigo-100 text-indigo-700' },
+  pending_review: { label: 'Under Review', className: 'bg-amber-100 text-amber-700' },
   in_progress: { label: 'In Progress', className: 'bg-purple-100 text-purple-700' },
   delivered: { label: 'Delivered', className: 'bg-cyan-100 text-cyan-700' },
   completed: { label: 'Completed', className: 'bg-green-100 text-green-700' },

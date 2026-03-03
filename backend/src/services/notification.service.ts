@@ -107,14 +107,14 @@ export class NotificationService {
 
     const msg = `💰 <b>Payment Confirmed for ${deal.dealId}</b>\n\n` +
       `Admin has confirmed payment receipt.\n` +
-      `Seller, you can now proceed with delivery.`;
+      `Seller, please upload your deliverables.`;
 
     await Promise.all([
       this.sendToUser(buyer.telegramId, msg),
       this.sendToUser(seller.telegramId, msg, {
         reply_markup: {
           inline_keyboard: [[
-            { text: '📦 Mark as Delivered', callback_data: `deliver:${deal.dealId}` },
+            { text: '📤 Upload Deliverables', callback_data: `deliver:${deal.dealId}` },
           ]],
         },
       }),
@@ -252,11 +252,11 @@ export class NotificationService {
       seller.telegramId,
       `💰 <b>Payment Confirmed — ${deal.dealId}</b>\n\n` +
       `Buyer's crypto deposit is confirmed. Funds are in escrow.\n` +
-      `You can now proceed with delivery.`,
+      `You can now proceed — upload your deliverables.`,
       {
         reply_markup: {
           inline_keyboard: [[
-            { text: '📦 Mark as Delivered', callback_data: `deliver:${deal.dealId}` },
+            { text: '📤 Upload Deliverables', callback_data: `deliver:${deal.dealId}` },
           ]],
         },
       }
@@ -308,6 +308,86 @@ export class NotificationService {
       seller.telegramId,
       `ℹ️ <b>Deal ${deal.dealId} — Funds Refunded</b>\n\n` +
       `Crypto escrow funds have been refunded to the buyer.`
+    );
+  }
+
+  async notifyDeliverablesUploaded(deal: any): Promise<void> {
+    // Notify all admins
+    const admins = await User.find({ role: 'admin' });
+    const seller = await User.findById(deal.seller);
+    const sellerName = seller?.username ? `@${seller.username}` : seller?.firstName || 'Seller';
+
+    const msg = `🔍 <b>Deliverables Uploaded — ${deal.dealId}</b>\n\n` +
+      `${sellerName} has uploaded deliverables for review.\n` +
+      `Please review and approve/reject on the admin panel.`;
+
+    const extra = FRONTEND_URL ? {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '🌐 Review Deliverables', url: `${FRONTEND_URL}/admin/deals/${deal.dealId}/deliverables` },
+        ]],
+      },
+    } : undefined;
+
+    for (const admin of admins) {
+      await this.sendToUser(admin.telegramId, msg, extra);
+    }
+  }
+
+  async notifyDeliverablesApproved(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller) return;
+
+    await this.sendToUser(
+      buyer.telegramId,
+      `✅ <b>Deliverables Approved — ${deal.dealId}</b>\n\n` +
+      `Admin has approved the deliverables. You can now view and download them.\n` +
+      `Please confirm delivery or open a dispute within ${deal.terms.disputeWindowDays} days.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📥 View Deliverables', callback_data: `view_deliverables:${deal.dealId}` }],
+            [
+              { text: '✅ Confirm Delivery', callback_data: `confirm:${deal.dealId}` },
+              { text: '⚖️ Open Dispute', callback_data: `dispute:${deal.dealId}` },
+            ],
+          ],
+        },
+      }
+    );
+
+    await this.sendToUser(
+      seller.telegramId,
+      `✅ <b>Deliverables Approved — ${deal.dealId}</b>\n\n` +
+      `Admin approved your deliverables. Buyer has been notified.\n` +
+      `Auto-release in ${deal.terms.autoReleaseDays} days if no dispute.`
+    );
+  }
+
+  async notifyDeliverablesRejected(deal: any, reason: string): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller) return;
+
+    await this.sendToUser(
+      seller.telegramId,
+      `❌ <b>Deliverables Rejected — ${deal.dealId}</b>\n\n` +
+      `Reason: ${reason}\n\n` +
+      `Please upload new deliverables.`,
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📤 Upload Deliverables', callback_data: `upload_deliverable:${deal.dealId}` },
+          ]],
+        },
+      }
+    );
+
+    await this.sendToUser(
+      buyer.telegramId,
+      `ℹ️ <b>Deliverables Rejected — ${deal.dealId}</b>\n\n` +
+      `Admin rejected the seller's deliverables. Seller has been asked to re-upload.`
     );
   }
 

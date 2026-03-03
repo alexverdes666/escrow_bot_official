@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useState } from 'react';
+import Link from 'next/link';
 
 export default function AdminDealsPage() {
   const [statusFilter, setStatusFilter] = useState('');
@@ -48,6 +49,7 @@ export default function AdminDealsPage() {
           <option value="">All Statuses</option>
           <option value="active">Active (Awaiting Payment)</option>
           <option value="payment_confirmed">Payment Confirmed</option>
+          <option value="pending_review">Pending Review</option>
           <option value="delivered">Delivered</option>
           <option value="disputed">Disputed</option>
           <option value="completed">Completed</option>
@@ -81,14 +83,24 @@ export default function AdminDealsPage() {
                     <td className="px-4 py-3"><DealStatusBadge status={deal.status} /></td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{format(new Date(deal.createdAt), 'MMM d, yyyy')}</td>
                     <td className="px-4 py-3">
-                      {deal.status === 'active' && (
-                        <button
-                          onClick={() => confirmPayment(deal.dealId)}
-                          className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700"
-                        >
-                          Confirm Payment
-                        </button>
-                      )}
+                      <div className="flex gap-2">
+                        {deal.status === 'active' && (
+                          <button
+                            onClick={() => confirmPayment(deal.dealId)}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700"
+                          >
+                            Confirm Payment
+                          </button>
+                        )}
+                        {deal.status === 'pending_review' && (
+                          <Link
+                            href={`/admin/deals/${deal.dealId}/deliverables`}
+                            className="bg-amber-600 text-white px-3 py-1 rounded text-xs hover:bg-amber-700"
+                          >
+                            Review Deliverables
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

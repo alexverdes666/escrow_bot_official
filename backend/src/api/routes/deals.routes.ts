@@ -74,6 +74,7 @@ dealRoutes.get('/:dealId', async (req: AuthRequest, res: Response) => {
       .populate('seller', 'username firstName telegramId reputation')
       .populate('createdBy', 'username firstName')
       .populate('attachments.uploadedBy', 'username firstName')
+      .populate('deliverables.uploadedBy', 'username firstName')
       .lean();
 
     if (!deal) {
@@ -83,10 +84,17 @@ dealRoutes.get('/:dealId', async (req: AuthRequest, res: Response) => {
 
     // Only allow participants and admins
     const userId = req.user!.userId;
-    const isParticipant = deal.buyer._id.toString() === userId || deal.seller._id.toString() === userId;
-    if (!isParticipant && req.user!.role !== 'admin') {
+    const isBuyer = deal.buyer._id.toString() === userId;
+    const isSeller = deal.seller._id.toString() === userId;
+    const isAdmin = req.user!.role === 'admin';
+    if (!isBuyer && !isSeller && !isAdmin) {
       res.status(403).json({ error: 'Access denied' });
       return;
+    }
+
+    // Strip deliverables from buyer if not approved
+    if (isBuyer && deal.deliverableReview?.status !== 'approved') {
+      deal.deliverables = [];
     }
 
     res.json(deal);
@@ -155,6 +163,76 @@ dealRoutes.get('/:dealId/attachments/:attachmentId/file', async (req: AuthReques
     Readable.fromWeb(fileRes.body as any).pipe(res);
   } catch (error) {
     logger.error('File proxy error:', error);
+    res.status(500).json({ error: 'Failed to proxy file' });
+  }
+});
+
+// Proxy deliverable file from Telegram
+dealRoutes.get('/:dealId/deliverables/:deliverableId/file', async (req: AuthRequest, res: Response) => {
+  try {
+    const deal = await Deal.findOne({ dealId: req.params.dealId });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    const isBuyer = deal.buyer.toString() === userId;
+    const isSeller = deal.seller.toString() === userId;
+    const isAdmin = req.user!.role === 'admin';
+
+    if (!isBuyer && !isSeller && !isAdmin) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    // Buyer can only access after approval
+    if (isBuyer && deal.deliverableReview?.status !== 'approved') {
+      res.status(403).json({ error: 'Deliverables not yet approved' });
+      return;
+    }
+
+    const deliverable = deal.deliverables.find(
+      (d: any) => d._id?.toString() === req.params.deliverableId
+    );
+    if (!deliverable) {
+      res.status(404).json({ error: 'Deliverable not found' });
+      return;
+    }
+
+    const telegram = getTelegramApi();
+    if (!telegram) {
+      res.status(503).json({ error: 'Bot service unavailable' });
+      return;
+    }
+
+    const fileLink = await telegram.getFileLink(deliverable.fileId);
+    const url = typeof fileLink === 'string' ? fileLink : fileLink.href;
+
+    const fileRes = await globalThis.fetch(url);
+    if (!fileRes.ok || !fileRes.body) {
+      res.status(502).json({ error: 'Failed to fetch file from Telegram' });
+      return;
+    }
+
+    if (deliverable.mimeType) {
+      res.setHeader('Content-Type', deliverable.mimeType);
+    } else if (deliverable.fileType === 'photo') {
+      res.setHeader('Content-Type', 'image/jpeg');
+    }
+    if (deliverable.fileName) {
+      res.setHeader('Content-Disposition', `inline; filename="${deliverable.fileName}"`);
+    }
+    if (deliverable.fileSize) {
+      res.setHeader('Content-Length', String(deliverable.fileSize));
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const { Readable } = await import('stream');
+    Readable.fromWeb(fileRes.body as any).pipe(res);
+  } catch (error) {
+    logger.error('Deliverable file proxy error:', error);
     res.status(500).json({ error: 'Failed to proxy file' });
   }
 });
