@@ -40,6 +40,16 @@ templateRoutes.patch('/:id', authMiddleware, adminMiddleware, async (req: AuthRe
   }
 });
 
+// Admin: list ALL templates (including inactive)
+templateRoutes.get('/all', authMiddleware, adminMiddleware, async (_req: AuthRequest, res: Response) => {
+  try {
+    const templates = await DealTemplate.find().sort('sortOrder').lean();
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
 // Admin: delete (soft) template
 templateRoutes.delete('/:id', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response) => {
   try {
