@@ -7,7 +7,7 @@ import { User, Star, CheckCircle, AlertTriangle } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user } = useAuthStore();
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: async () => {
       const { data } = await api.get('/users/profile');
@@ -16,6 +16,9 @@ export default function ProfilePage() {
   });
 
   if (!user) return null;
+
+  // Use fresh API data when available, fall back to zustand (stale login snapshot)
+  const rep = profile?.reputation ?? user.reputation;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -46,7 +49,7 @@ export default function ProfilePage() {
         </h2>
         <div className="text-center mb-4">
           <div className="text-4xl font-bold text-primary-600">
-            {profile?.reputation?.score || user.reputation.score}
+            {rep.score}
           </div>
           <div className="text-gray-500 text-sm">Reputation Score</div>
         </div>
@@ -54,25 +57,25 @@ export default function ProfilePage() {
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="text-lg font-bold text-green-600">
               <CheckCircle className="w-5 h-5 mx-auto mb-1" />
-              {profile?.reputation?.completedDeals || user.reputation.completedDeals}
+              {rep.completedDeals}
             </div>
             <div className="text-xs text-gray-500">Completed</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="text-lg font-bold text-blue-600">
-              {profile?.stats?.totalDeals || 0}
+              {profile?.stats?.totalDeals ?? 0}
             </div>
             <div className="text-xs text-gray-500">Total Deals</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="text-lg font-bold text-green-600">
-              {profile?.reputation?.disputesWon || user.reputation.disputesWon}
+              {rep.disputesWon}
             </div>
             <div className="text-xs text-gray-500">Disputes Won</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="text-lg font-bold text-red-600">
-              {profile?.reputation?.disputesLost || user.reputation.disputesLost}
+              {rep.disputesLost}
             </div>
             <div className="text-xs text-gray-500">Disputes Lost</div>
           </div>
