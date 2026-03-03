@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { Deal, Dispute, User, AuditLog } from '../../models';
 import { getNotificationService } from '../../services/notification.service';
+import { releaseFunds, refundFunds, splitFunds } from '../../services/cryptoRelease.service';
+import { logger } from '../../utils/logger';
 
 export const adminRoutes = Router();
 
@@ -89,6 +91,23 @@ adminRoutes.post('/disputes/:disputeId/resolve', async (req: AuthRequest, res: R
         },
       },
     });
+
+    // Handle crypto release/refund for disputed crypto deals
+    const deal = await Deal.findById(dispute.deal);
+    if (deal && deal.cryptoPayment && deal.cryptoPayment.status === 'confirmed') {
+      try {
+        if (decision === 'release_to_seller') {
+          await releaseFunds(deal);
+        } else if (decision === 'refund_to_buyer') {
+          await refundFunds(deal);
+        } else if (decision === 'split' && splitPercent) {
+          await splitFunds(deal, splitPercent.buyer || 50, splitPercent.seller || 50);
+        }
+      } catch (err) {
+        logger.error(`Crypto release/refund failed for dispute ${dispute._id}:`, err);
+        // Don't fail the resolution — admin can retry manually
+      }
+    }
 
     // Log admin action
     await AuditLog.create({
@@ -219,6 +238,47 @@ adminRoutes.patch('/users/:userId', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Manual crypto release
+adminRoutes.post('/deals/:dealId/release-crypto', async (req: AuthRequest, res: Response) => {
+  try {
+    const deal = await Deal.findOne({ dealId: req.params.dealId });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+
+    if (!deal.cryptoPayment) {
+      res.status(400).json({ error: 'Deal does not have crypto payment' });
+      return;
+    }
+
+    if (deal.cryptoPayment.status !== 'confirmed') {
+      res.status(400).json({ error: `Cannot release: crypto status is ${deal.cryptoPayment.status}` });
+      return;
+    }
+
+    const { action = 'release' } = req.body; // release | refund
+
+    if (action === 'refund') {
+      await refundFunds(deal);
+    } else {
+      await releaseFunds(deal);
+    }
+
+    await AuditLog.create({
+      action: 'admin_action',
+      performedBy: req.user!.userId,
+      targetDeal: deal._id,
+      details: { action: `manual_crypto_${action}`, dealId: deal.dealId },
+    });
+
+    res.json({ success: true, deal });
+  } catch (error: any) {
+    logger.error(`Manual crypto release failed:`, error);
+    res.status(500).json({ error: error.message || 'Failed to release crypto' });
+  }
+});
+
 // Analytics
 adminRoutes.get('/analytics', async (_req: AuthRequest, res: Response) => {
   try {
@@ -231,7 +291,7 @@ adminRoutes.get('/analytics', async (_req: AuthRequest, res: Response) => {
       dealsByStatus,
     ] = await Promise.all([
       Deal.countDocuments(),
-      Deal.countDocuments({ status: { $in: ['active', 'payment_confirmed', 'in_progress', 'delivered'] } }),
+      Deal.countDocuments({ status: { $in: ['active', 'awaiting_deposit', 'funded', 'payment_confirmed', 'in_progress', 'delivered'] } }),
       Deal.countDocuments({ status: 'completed' }),
       Dispute.countDocuments({ status: { $in: ['open', 'under_review'] } }),
       User.countDocuments(),

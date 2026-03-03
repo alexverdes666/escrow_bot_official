@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { Deal, User } from '../models';
 import { getNotificationService } from '../services/notification.service';
+import { releaseFunds } from '../services/cryptoRelease.service';
 import { logger } from '../utils/logger';
 
 export function startAutoReleaseJob() {
@@ -32,6 +33,16 @@ export function startAutoReleaseJob() {
         await User.findByIdAndUpdate(deal.seller, {
           $inc: { 'reputation.completedDeals': 1, 'reputation.score': 5 },
         });
+
+        // Release crypto funds if applicable
+        if (deal.cryptoPayment && deal.cryptoPayment.status === 'confirmed') {
+          try {
+            await releaseFunds(deal);
+            logger.info(`Auto-released crypto funds for deal ${deal.dealId}`);
+          } catch (err) {
+            logger.error(`Crypto auto-release failed for ${deal.dealId}:`, err);
+          }
+        }
 
         // Notify
         const notificationService = getNotificationService();

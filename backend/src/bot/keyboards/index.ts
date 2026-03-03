@@ -125,3 +125,22 @@ export function milestoneKeyboard() {
     ],
   ]);
 }
+
+export function cryptoChainKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('ETH (Ethereum)', 'crypto:ETH'),
+      Markup.button.callback('BTC (Bitcoin)', 'crypto:BTC'),
+    ],
+    [
+      Markup.button.callback('TRX (TRON)', 'crypto:TRX'),
+      Markup.button.callback('USDT (TRC-20)', 'crypto:USDT'),
+    ],
+  ]);
+}
+
+export function checkPaymentKeyboard(dealId: string) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('🔄 Check Payment', `check_payment:${dealId}`)],
+  ]);
+}

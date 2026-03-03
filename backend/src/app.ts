@@ -4,6 +4,7 @@ import { logger } from './utils/logger';
 import { createExpressApp } from './api';
 import { createBot } from './bot';
 import { startAutoReleaseJob } from './jobs/autoRelease.job';
+import { startCryptoWatcherJob } from './services/cryptoWatcher.service';
 
 async function main() {
   // Connect to MongoDB
@@ -37,6 +38,11 @@ async function main() {
 
   // Start cron jobs
   startAutoReleaseJob();
+
+  if (env.CRYPTO_ENABLED) {
+    startCryptoWatcherJob();
+    logger.info('Crypto watcher started');
+  }
 
   // Graceful shutdown
   const shutdown = (signal: string) => {

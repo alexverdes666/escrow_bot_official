@@ -64,6 +64,8 @@ export function formatDealStatus(status: string): string {
     draft: '📝 Draft',
     pending_agreement: '⏳ Pending Agreement',
     active: '✅ Active',
+    awaiting_deposit: '⏳ Awaiting Deposit',
+    funded: '💎 Funded (Crypto)',
     payment_confirmed: '💰 Payment Confirmed',
     in_progress: '🔄 In Progress',
     delivered: '📦 Delivered',

@@ -159,6 +159,123 @@ export class NotificationService {
     ]);
   }
 
+  async notifyDepositAddress(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    if (!buyer || !deal.cryptoPayment) return;
+
+    const cp = deal.cryptoPayment;
+    const msg = `💰 <b>Deposit Address for ${deal.dealId}</b>\n\n` +
+      `Send exactly <b>${cp.expectedAmountHuman}</b> to:\n\n` +
+      `<code>${cp.depositAddress}</code>\n\n` +
+      `Chain: <b>${cp.chain}</b>${cp.token ? ` (${cp.token})` : ''}\n` +
+      `Network: <b>${cp.network}</b>\n\n` +
+      `⚠️ Send the exact amount. The system will detect your deposit automatically.`;
+
+    await this.sendToUser(buyer.telegramId, msg, {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '🔄 Check Payment', callback_data: `check_payment:${deal.dealId}` },
+        ]],
+      },
+    });
+
+    // Also notify seller
+    const seller = await User.findById(deal.seller);
+    if (seller) {
+      await this.sendToUser(
+        seller.telegramId,
+        `⏳ <b>Deal ${deal.dealId} — Awaiting Deposit</b>\n\n` +
+        `Buyer has been given the deposit address. Waiting for crypto payment of ${cp.expectedAmountHuman}.`
+      );
+    }
+  }
+
+  async notifyDepositDetected(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller || !deal.cryptoPayment) return;
+
+    const msg = `⏳ <b>Deposit Detected — ${deal.dealId}</b>\n\n` +
+      `We detected a payment of ${deal.cryptoPayment.expectedAmountHuman}.\n` +
+      `Waiting for blockchain confirmations...`;
+
+    await Promise.all([
+      this.sendToUser(buyer.telegramId, msg),
+      this.sendToUser(seller.telegramId, msg),
+    ]);
+  }
+
+  async notifyDepositConfirmed(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller || !deal.cryptoPayment) return;
+
+    await this.sendToUser(
+      buyer.telegramId,
+      `✅ <b>Payment Confirmed — ${deal.dealId}</b>\n\n` +
+      `Your crypto deposit has been confirmed on-chain.\n` +
+      `Funds are now held in escrow. Seller, proceed with delivery.`
+    );
+
+    await this.sendToUser(
+      seller.telegramId,
+      `💰 <b>Payment Confirmed — ${deal.dealId}</b>\n\n` +
+      `Buyer's crypto deposit is confirmed. Funds are in escrow.\n` +
+      `You can now proceed with delivery.`,
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📦 Mark as Delivered', callback_data: `deliver:${deal.dealId}` },
+          ]],
+        },
+      }
+    );
+  }
+
+  async notifyFundsReleased(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller || !deal.cryptoPayment) return;
+
+    const cp = deal.cryptoPayment;
+
+    await this.sendToUser(
+      seller.telegramId,
+      `💸 <b>Funds Released — ${deal.dealId}</b>\n\n` +
+      `Crypto funds have been sent to your wallet.\n` +
+      `TxHash: <code>${cp.releaseTxHash}</code>\n` +
+      `Address: <code>${cp.sellerAddress}</code>`
+    );
+
+    await this.sendToUser(
+      buyer.telegramId,
+      `✅ <b>Deal ${deal.dealId} — Funds Released</b>\n\n` +
+      `Crypto escrow funds have been released to the seller.`
+    );
+  }
+
+  async notifyFundsRefunded(deal: any): Promise<void> {
+    const buyer = await User.findById(deal.buyer);
+    const seller = await User.findById(deal.seller);
+    if (!buyer || !seller || !deal.cryptoPayment) return;
+
+    const cp = deal.cryptoPayment;
+
+    await this.sendToUser(
+      buyer.telegramId,
+      `💸 <b>Funds Refunded — ${deal.dealId}</b>\n\n` +
+      `Crypto funds have been refunded to your wallet.\n` +
+      `TxHash: <code>${cp.refundTxHash}</code>\n` +
+      `Address: <code>${cp.buyerAddress}</code>`
+    );
+
+    await this.sendToUser(
+      seller.telegramId,
+      `ℹ️ <b>Deal ${deal.dealId} — Funds Refunded</b>\n\n` +
+      `Crypto escrow funds have been refunded to the buyer.`
+    );
+  }
+
   async notifyDisputeResolved(dispute: any): Promise<void> {
     const deal = await (dispute.deal._id ? Promise.resolve(dispute.deal) :
       (await import('../models')).Deal.findById(dispute.deal).populate('buyer seller'));

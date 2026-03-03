@@ -19,6 +19,19 @@ const envSchema = z.object({
   ADMIN_TELEGRAM_IDS: z.string().default('').transform(v =>
     v ? v.split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : []
   ),
+
+  // Crypto wallet integration
+  CRYPTO_ENABLED: z.string().transform(v => v === 'true').default('false'),
+  CRYPTO_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
+  CRYPTO_MNEMONIC: z.string().optional(),
+  CRYPTO_FEE_PERCENT: z.coerce.number().default(2),
+  CRYPTO_FEE_WALLET_ETH: z.string().optional(),
+  CRYPTO_FEE_WALLET_BTC: z.string().optional(),
+  CRYPTO_FEE_WALLET_TRON: z.string().optional(),
+  ETH_RPC_URL: z.string().optional(),
+  TRON_API_URL: z.string().optional(),
+  TRON_API_KEY: z.string().optional(),
+  USDT_TRC20_CONTRACT: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

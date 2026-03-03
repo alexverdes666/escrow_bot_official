@@ -22,6 +22,10 @@ export interface DealCreationState {
     sellerObligations?: string;
     customConditions?: string[];
   };
+  // Crypto payment fields
+  cryptoChain?: 'ETH' | 'BTC' | 'TRON';
+  cryptoToken?: 'TRX' | 'USDT';
+  buyerWalletAddress?: string;
   originType: 'private' | 'group' | 'supergroup';
   originChatId?: number;
   originChatTitle?: string;
@@ -38,6 +42,7 @@ export interface DisputeState {
 export interface BotSessionData extends Scenes.WizardSessionData {
   dealCreation?: DealCreationState;
   dispute?: DisputeState;
+  pendingSellerWallet?: string; // dealId awaiting seller wallet address for crypto
 }
 
 export type BotContext = Context & Scenes.WizardContext<BotSessionData> & {

@@ -50,11 +50,40 @@ const originSchema = new Schema({
   chatTitle: { type: String },
 }, { _id: false });
 
+// Crypto payment sub-schema
+const cryptoPaymentSchema = new Schema({
+  chain: { type: String, enum: ['ETH', 'BTC', 'TRON'], required: true },
+  token: { type: String, enum: ['TRX', 'USDT'] },
+  network: { type: String, enum: ['testnet', 'mainnet'], required: true },
+  depositAddress: { type: String, required: true },
+  derivationIndex: { type: Number, required: true },
+  buyerAddress: { type: String, required: true },
+  sellerAddress: { type: String, required: true },
+  expectedAmount: { type: String, required: true },
+  expectedAmountHuman: { type: String, required: true },
+  receivedAmount: { type: String },
+  depositTxHash: { type: String },
+  confirmations: { type: Number, default: 0 },
+  fundedAt: { type: Date },
+  releaseTxHash: { type: String },
+  releasedAt: { type: Date },
+  refundTxHash: { type: String },
+  platformFeeAmount: { type: String },
+  platformFeeTxHash: { type: String },
+  status: {
+    type: String,
+    enum: ['pending', 'detected', 'confirmed', 'released', 'refunded'],
+    default: 'pending',
+  },
+}, { _id: false });
+
 // Deal statuses
 export const DEAL_STATUSES = [
   'draft',
   'pending_agreement',
   'active',
+  'awaiting_deposit',
+  'funded',
   'payment_confirmed',
   'in_progress',
   'delivered',
@@ -94,6 +123,32 @@ export interface IDealTerms {
   description: string;
 }
 
+export type CryptoChain = 'ETH' | 'BTC' | 'TRON';
+export type CryptoToken = 'TRX' | 'USDT';
+export type CryptoPaymentStatus = 'pending' | 'detected' | 'confirmed' | 'released' | 'refunded';
+
+export interface ICryptoPayment {
+  chain: CryptoChain;
+  token?: CryptoToken;
+  network: 'testnet' | 'mainnet';
+  depositAddress: string;
+  derivationIndex: number;
+  buyerAddress: string;
+  sellerAddress: string;
+  expectedAmount: string;
+  expectedAmountHuman: string;
+  receivedAmount?: string;
+  depositTxHash?: string;
+  confirmations: number;
+  fundedAt?: Date;
+  releaseTxHash?: string;
+  releasedAt?: Date;
+  refundTxHash?: string;
+  platformFeeAmount?: string;
+  platformFeeTxHash?: string;
+  status: CryptoPaymentStatus;
+}
+
 export interface IDeal extends Document {
   dealId: string;
   buyer: Types.ObjectId;
@@ -126,6 +181,7 @@ export interface IDeal extends Document {
     changedAt: Date;
     note?: string;
   }>;
+  cryptoPayment?: ICryptoPayment;
   botMessageIds: {
     buyer: number[];
     seller: number[];
@@ -162,6 +218,7 @@ const dealSchema = new Schema<IDeal>(
     cancelledAt: { type: Date, default: null },
     cancelledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     cancelReason: { type: String, default: null },
+    cryptoPayment: { type: cryptoPaymentSchema, default: undefined },
     statusHistory: [statusHistorySchema],
     botMessageIds: {
       buyer: [{ type: Number }],
@@ -174,5 +231,6 @@ const dealSchema = new Schema<IDeal>(
 dealSchema.index({ buyer: 1, status: 1 });
 dealSchema.index({ seller: 1, status: 1 });
 dealSchema.index({ status: 1, createdAt: -1 });
+dealSchema.index({ 'cryptoPayment.status': 1, status: 1 });
 
 export const Deal = model<IDeal>('Deal', dealSchema);

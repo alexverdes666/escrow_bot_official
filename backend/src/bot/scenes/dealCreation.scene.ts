@@ -8,8 +8,10 @@ import { logger } from '../../utils/logger';
 import {
   roleKeyboard, templateKeyboard, currencyKeyboard, paymentTypeKeyboard,
   depositKeyboard, deadlineKeyboard, autoReleaseKeyboard, disputeWindowKeyboard,
-  skipKeyboard, confirmDealKeyboard, milestoneKeyboard,
+  skipKeyboard, confirmDealKeyboard, milestoneKeyboard, cryptoChainKeyboard,
 } from '../keyboards';
+import { env } from '../../config/env';
+import { validateWalletAddress } from '../../services/wallet.service';
 
 export const dealCreationScene = new Scenes.WizardScene<BotContext>(
   'deal-creation',
@@ -127,8 +129,38 @@ export const dealCreationScene = new Scenes.WizardScene<BotContext>(
     const state = getDealState(ctx);
 
     if (ctx.message && 'text' in ctx.message) {
-      // Custom currency input
-      state.terms.currency = ctx.message.text.trim().toUpperCase();
+      const input = ctx.message.text.trim();
+
+      // Handle buyer wallet address input for crypto deals
+      if (state.awaitingInput === 'buyer_wallet') {
+        if (!state.cryptoChain) {
+          await ctx.reply('Error: no crypto chain selected. Please try again.');
+          return;
+        }
+        if (!validateWalletAddress(state.cryptoChain, input)) {
+          await ctx.reply(`Invalid ${state.cryptoChain} wallet address. Please try again:`);
+          return;
+        }
+        state.buyerWalletAddress = input;
+        state.awaitingInput = undefined;
+        return await askPaymentTypeOrSkip(ctx, state);
+      }
+
+      // Custom currency input — check if it's a crypto currency
+      const currency = input.toUpperCase();
+      state.terms.currency = currency;
+
+      if (env.CRYPTO_ENABLED && ['ETH', 'BTC', 'TRX'].includes(currency)) {
+        state.cryptoChain = currency === 'TRX' ? 'TRON' : currency as 'ETH' | 'BTC';
+        if (currency === 'TRX') state.cryptoToken = 'TRX';
+
+        state.awaitingInput = 'buyer_wallet';
+        await ctx.replyWithHTML(
+          `🔑 <b>Enter your ${state.cryptoChain} wallet address</b> (for refunds):`
+        );
+        return;
+      }
+
       return await askPaymentTypeOrSkip(ctx, state);
     }
   },
@@ -321,7 +353,53 @@ dealCreationScene.action(/^currency:(.+)$/, async (ctx) => {
   }
 
   state.terms.currency = currency;
+
+  // If USDT is selected and crypto is enabled, offer crypto escrow
+  if (env.CRYPTO_ENABLED && currency === 'USDT') {
+    await ctx.editMessageText(
+      '🔗 <b>Crypto Escrow Available!</b>\n\n' +
+      'Would you like to use on-chain crypto escrow for this deal?\n' +
+      'Select a blockchain network or skip for manual payment.',
+      { parse_mode: 'HTML', ...cryptoChainKeyboard() }
+    );
+    return;
+  }
+
   await askPaymentTypeOrSkip(ctx, state);
+});
+
+// Crypto chain selection
+dealCreationScene.action(/^crypto:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const selection = ctx.match[1];
+  const state = getDealState(ctx);
+
+  if (selection === 'ETH') {
+    state.cryptoChain = 'ETH';
+    state.terms.currency = 'ETH';
+  } else if (selection === 'BTC') {
+    state.cryptoChain = 'BTC';
+    state.terms.currency = 'BTC';
+  } else if (selection === 'TRX') {
+    state.cryptoChain = 'TRON';
+    state.cryptoToken = 'TRX';
+    state.terms.currency = 'TRX';
+  } else if (selection === 'USDT') {
+    state.cryptoChain = 'TRON';
+    state.cryptoToken = 'USDT';
+    state.terms.currency = 'USDT';
+  }
+
+  // Ask buyer for their wallet address (for refunds)
+  state.awaitingInput = 'buyer_wallet';
+  await ctx.editMessageText(
+    `🔑 <b>Enter your wallet address</b>\n\n` +
+    `This will be used for refunds if needed.\n` +
+    `Chain: <b>${state.cryptoChain}</b>${state.cryptoToken ? ` (${state.cryptoToken})` : ''}\n\n` +
+    `Paste your ${state.cryptoChain} wallet address:`,
+    { parse_mode: 'HTML' }
+  );
+  ctx.wizard.selectStep(4);
 });
 
 // Payment type selection
@@ -486,6 +564,29 @@ dealCreationScene.action('wizard:confirm', async (ctx) => {
 
     const dealId = generateDealId();
 
+    // Build crypto payment subdoc if crypto chain is selected
+    let cryptoPayment;
+    if (env.CRYPTO_ENABLED && state.cryptoChain) {
+      const chainService = await import('../../services/chains');
+      const amountStr = chainService.getChainService(state.cryptoChain)
+        .parseAmount(String(state.terms.totalAmount), state.cryptoToken);
+      const humanLabel = `${state.terms.totalAmount} ${chainService.getChainLabel(state.cryptoChain, state.cryptoToken)}`;
+
+      cryptoPayment = {
+        chain: state.cryptoChain,
+        token: state.cryptoToken,
+        network: env.CRYPTO_NETWORK,
+        depositAddress: '', // generated after seller provides wallet
+        derivationIndex: 0,
+        buyerAddress: state.buyerWalletAddress || '',
+        sellerAddress: '', // seller provides after agreeing
+        expectedAmount: amountStr,
+        expectedAmountHuman: humanLabel,
+        confirmations: 0,
+        status: 'pending' as const,
+      };
+    }
+
     const deal = await Deal.create({
       dealId,
       buyer: buyer._id,
@@ -515,6 +616,7 @@ dealCreationScene.action('wizard:confirm', async (ctx) => {
         chatId: state.originChatId,
         chatTitle: state.originChatTitle,
       },
+      ...(cryptoPayment ? { cryptoPayment } : {}),
       [`${isBuyer ? 'buyer' : 'seller'}Agreed`]: true,
       [`${isBuyer ? 'buyer' : 'seller'}AgreedAt`]: new Date(),
       statusHistory: [{
