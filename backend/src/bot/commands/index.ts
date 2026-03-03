@@ -4,6 +4,7 @@ import { Deal, User } from '../../models';
 import { env } from '../../config/env';
 import { formatDealListItem, formatDealStatus } from '../utils/formatDeal';
 import { websiteButtonRow } from '../utils/safeUrl';
+import { createLoginToken } from '../../api/routes/auth.routes';
 
 export function setupCommands(bot: Telegraf<BotContext>) {
   // /start command
@@ -167,6 +168,29 @@ export function setupCommands(bot: Telegraf<BotContext>) {
     buttons.push([Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')]);
 
     await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
+  });
+
+  // /login command — generates a one-time login link for the website
+  bot.command('login', async (ctx) => {
+    if (!ctx.from) return;
+
+    const frontendUrl = env.FRONTEND_URL;
+    if (!frontendUrl || !frontendUrl.startsWith('https')) {
+      await ctx.reply('Website login is not available yet.');
+      return;
+    }
+
+    const token = createLoginToken(ctx.from.id);
+    const loginUrl = `${frontendUrl}/login?token=${token}`;
+
+    await ctx.replyWithHTML(
+      `🔐 <b>Website Login</b>\n\n` +
+      `Click the button below to log in to the dashboard.\n` +
+      `This link expires in <b>5 minutes</b> and can only be used once.`,
+      Markup.inlineKeyboard([
+        [Markup.button.url('🌐 Log In to Website', loginUrl)],
+      ])
+    );
   });
 
   // /cancel command
