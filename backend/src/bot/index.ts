@@ -32,6 +32,7 @@ export function createBot(): Telegraf<BotContext> {
   // Set bot command menu
   bot.telegram.setMyCommands([
     { command: 'start', description: 'Start the bot' },
+    { command: 'home', description: 'Main menu' },
     { command: 'newdeal', description: 'Create a new escrow deal' },
     { command: 'mydeals', description: 'View your active deals' },
     { command: 'profile', description: 'View your profile & stats' },

@@ -1,10 +1,100 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext, getSession } from '../context';
-import { Deal, User, Dispute } from '../../models';
+import { Deal, User } from '../../models';
 import { env } from '../../config/env';
 import { formatDealListItem, formatDealStatus } from '../utils/formatDeal';
 import { websiteButtonRow } from '../utils/safeUrl';
 import { createLoginToken } from '../../api/routes/auth.routes';
+import { homeKeyboard, homeButtonRow } from '../keyboards';
+
+function helpText(): string {
+  return (
+    `╔══════════════════════╗\n` +
+    `     📖  <b>HELP  CENTER</b>\n` +
+    `╚══════════════════════╝\n\n` +
+
+    `┌─── <b>Commands</b> ────────┐\n` +
+    `│  /start — Start the bot\n` +
+    `│  /home — Main menu\n` +
+    `│  /newdeal — New deal\n` +
+    `│  /mydeals — Active deals\n` +
+    `│  /profile — Your stats\n` +
+    `│  /help — This page\n` +
+    `│  /cancel — Cancel operation\n` +
+    `└───────────────────────┘\n\n` +
+
+    `┌─── <b>In Groups</b> ───────┐\n` +
+    `│  <code>/newdeal @username</code>\n` +
+    `│  Start a deal with someone\n` +
+    `│  directly in a group chat\n` +
+    `└───────────────────────┘\n\n` +
+
+    `┌─── <b>Deal Types</b> ──────┐\n` +
+    `│  💰 Full Prepay\n` +
+    `│     ╰ 100% upfront\n` +
+    `│  💳 Partial Prepay\n` +
+    `│     ╰ Deposit + remainder\n` +
+    `│  📊 Milestone-Based\n` +
+    `│     ╰ Pay in stages\n` +
+    `│  🤝 No Prepay\n` +
+    `│     ╰ Pay on delivery\n` +
+    `└───────────────────────┘\n\n` +
+
+    `┌─── <b>Disputes</b> ────────┐\n` +
+    `│  ⚖️ Something wrong?\n` +
+    `│  Open a dispute and admin\n` +
+    `│  will review the evidence.\n` +
+    `└───────────────────────┘`
+  );
+}
+
+function loginText(): string {
+  return (
+    `╔══════════════════════╗\n` +
+    `    🔐  <b>WEBSITE  LOGIN</b>\n` +
+    `╚══════════════════════╝\n\n` +
+    `Click the button below to log in\nto the dashboard.\n\n` +
+    `  ⏱ Expires in <b>5 minutes</b>\n` +
+    `  🔑 Single use only`
+  );
+}
+
+function profileText(
+  name: string, rep: any, memberSince: string,
+  totalDeals: number, asBuyer: number, asSeller: number,
+  completedDeals: number, activeDeals: number,
+): string {
+  // Build reputation stars (1 star per 10 points, max 5)
+  const starCount = Math.min(5, Math.floor(rep.score / 10));
+  const stars = '★'.repeat(starCount) + '☆'.repeat(5 - starCount);
+
+  return (
+    `╔══════════════════════╗\n` +
+    `     👤  <b>PROFILE</b>\n` +
+    `╚══════════════════════╝\n\n` +
+
+    `  <b>${name}</b>\n` +
+    `  📅 Member since ${memberSince}\n\n` +
+
+    `┌─── <b>Reputation</b> ──────┐\n` +
+    `│  ${stars}  <b>${rep.score}</b> pts\n` +
+    `└───────────────────────┘\n\n` +
+
+    `┌─── <b>Deal Statistics</b> ──┐\n` +
+    `│  📊 Total: <b>${totalDeals}</b>\n` +
+    `│     ├ 🛒 Buyer: ${asBuyer}\n` +
+    `│     └ 🏪 Seller: ${asSeller}\n` +
+    `│  ✅ Completed: <b>${completedDeals}</b>\n` +
+    `│  🔄 Active: <b>${activeDeals}</b>\n` +
+    `└───────────────────────┘\n\n` +
+
+    `┌─── <b>Dispute Record</b> ──┐\n` +
+    `│  ⚖️  Total: <b>${rep.disputesTotal}</b>\n` +
+    `│  🏆 Won: <b>${rep.disputesWon}</b>\n` +
+    `│  ❌ Lost: <b>${rep.disputesLost}</b>\n` +
+    `└───────────────────────┘`
+  );
+}
 
 export function setupCommands(bot: Telegraf<BotContext>) {
   // /start command
@@ -32,49 +122,38 @@ export function setupCommands(bot: Telegraf<BotContext>) {
       }
     }
 
-    await ctx.replyWithHTML(
-      `👋 <b>Welcome to My Escrow Bot!</b>\n\n` +
-      `I help buyers and sellers create secure deals with escrow protection.\n\n` +
-      `<b>How it works:</b>\n` +
-      `1. Create a deal with /newdeal\n` +
-      `2. Both parties agree to terms\n` +
-      `3. Payment is confirmed by admin\n` +
-      `4. Seller delivers, buyer confirms\n` +
-      `5. Deal completed! 🎉\n\n` +
-      `<b>Commands:</b>\n` +
-      `/newdeal — Create a new deal\n` +
-      `/mydeals — View your active deals\n` +
-      `/help — Get help\n\n` +
-      `You can also use me in groups! Just type:\n` +
-      `<code>/newdeal @username</code>`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')],
-        [Markup.button.callback('📋 My Deals', 'cmd:mydeals')],
-        ...websiteButtonRow('🌐 Open Website'),
-      ])
+    // Send welcome GIF
+    await ctx.replyWithAnimation(
+      'https://media1.tenor.com/m/BN7UwJ61hEoAAAAC/reading-time-victor-pivert.gif',
+      {
+        caption:
+          `╔══════════════════════╗\n` +
+          `   🛡  <b>MY ESCROW BOT</b>  🛡\n` +
+          `╚══════════════════════╝\n\n` +
+          `Welcome! I help you create <b>secure deals</b>\nwith escrow protection.\n\n` +
+          `┌─── <b>How it works</b> ───┐\n` +
+          `│\n` +
+          `│  1️⃣  Create a deal\n` +
+          `│  2️⃣  Both parties agree\n` +
+          `│  3️⃣  Payment is confirmed\n` +
+          `│  4️⃣  Seller delivers\n` +
+          `│  5️⃣  Deal completed! 🎉\n` +
+          `│\n` +
+          `└─────────────────────┘\n\n` +
+          `⟫ Choose an option below to get started:`,
+        parse_mode: 'HTML',
+        ...homeKeyboard(),
+      }
     );
   });
 
   // /help command
   bot.help(async (ctx) => {
-    await ctx.replyWithHTML(
-      `📖 <b>Help — My Escrow Bot</b>\n\n` +
-      `<b>Commands:</b>\n` +
-      `/start — Start the bot\n` +
-      `/newdeal — Create a new escrow deal\n` +
-      `/mydeals — View your active deals\n` +
-      `/cancel — Cancel current operation\n` +
-      `/help — Show this help message\n\n` +
-      `<b>In Groups:</b>\n` +
-      `<code>/newdeal @username</code> — Start a deal with someone in the group\n\n` +
-      `<b>Deal Types:</b>\n` +
-      `💰 Full Prepay — 100% upfront\n` +
-      `💳 Partial Prepay — Deposit + remainder\n` +
-      `📊 Milestone — Pay in stages\n` +
-      `🤝 No Prepay — Pay on delivery\n\n` +
-      `<b>Disputes:</b>\n` +
-      `If something goes wrong, you can open a dispute. Admin will review evidence and decide.\n\n` +
-      `Questions? Visit the website or contact the admin.`
+    await ctx.replyWithHTML(helpText(),
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')],
+        homeButtonRow(),
+      ])
     );
   });
 
@@ -147,25 +226,36 @@ export function setupCommands(bot: Telegraf<BotContext>) {
 
     if (deals.length === 0) {
       await ctx.replyWithHTML(
-        'You have no active deals.\n\nUse /newdeal to create one!',
+        `╔══════════════════════╗\n` +
+        `     📋  <b>MY  DEALS</b>\n` +
+        `╚══════════════════════╝\n\n` +
+        `No active deals found.\nCreate your first deal below!`,
         Markup.inlineKeyboard([
           [Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')],
+          homeButtonRow(),
         ])
       );
       return;
     }
 
-    let text = `📋 <b>Your Active Deals</b>\n\n`;
+    let text =
+      `╔══════════════════════╗\n` +
+      `     📋  <b>MY  DEALS</b>  (${deals.length})\n` +
+      `╚══════════════════════╝\n\n`;
     const buttons: any[][] = [];
 
-    deals.forEach(deal => {
-      text += formatDealListItem(deal, ctx.from!.id) + '\n\n';
+    deals.forEach((deal, i) => {
+      text += formatDealListItem(deal, ctx.from!.id);
+      if (i < deals.length - 1) text += `\n\n─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─\n\n`;
+      else text += `\n`;
       buttons.push([
-        Markup.button.callback(`📄 ${deal.dealId}`, `view:${deal.dealId}`),
+        Markup.button.callback(`📄 ${deal.dealId} — ${formatDealStatus(deal.status)}`, `view:${deal.dealId}`),
       ]);
     });
 
+    text += `\n═══════════════════════`;
     buttons.push([Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')]);
+    buttons.push(homeButtonRow());
 
     await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
   });
@@ -184,11 +274,10 @@ export function setupCommands(bot: Telegraf<BotContext>) {
     const loginUrl = `${frontendUrl}/login?token=${token}`;
 
     await ctx.replyWithHTML(
-      `🔐 <b>Website Login</b>\n\n` +
-      `Click the button below to log in to the dashboard.\n` +
-      `This link expires in <b>5 minutes</b> and can only be used once.`,
+      loginText(),
       Markup.inlineKeyboard([
         [Markup.button.url('🌐 Log In to Website', loginUrl)],
+        homeButtonRow(),
       ])
     );
   });
@@ -202,7 +291,7 @@ export function setupCommands(bot: Telegraf<BotContext>) {
 
     const userId = ctx.dbUser._id;
 
-    const [totalDeals, asBuyer, asSeller, completedDeals, activeDeals, disputeCount] = await Promise.all([
+    const [totalDeals, asBuyer, asSeller, completedDeals, activeDeals] = await Promise.all([
       Deal.countDocuments({ $or: [{ buyer: userId }, { seller: userId }] }),
       Deal.countDocuments({ buyer: userId }),
       Deal.countDocuments({ seller: userId }),
@@ -214,8 +303,93 @@ export function setupCommands(bot: Telegraf<BotContext>) {
         $or: [{ buyer: userId }, { seller: userId }],
         status: { $nin: ['cancelled', 'completed', 'resolved'] },
       }),
-      Dispute.countDocuments({
-        $or: [{ openedBy: userId }],
+    ]);
+
+    const rep = ctx.dbUser.reputation;
+    const memberSince = ctx.dbUser.createdAt
+      ? new Date(ctx.dbUser.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      : 'Unknown';
+
+    const name = ctx.dbUser.username ? `@${ctx.dbUser.username}` : ctx.dbUser.firstName;
+
+    await ctx.replyWithHTML(
+      profileText(name, rep, memberSince, totalDeals, asBuyer, asSeller, completedDeals, activeDeals),
+      Markup.inlineKeyboard([
+        [Markup.button.callback('📋 My Deals', 'cmd:mydeals')],
+        ...websiteButtonRow('🌐 View on Website', '/profile'),
+        homeButtonRow(),
+      ])
+    );
+  });
+
+  // /cancel command
+  bot.command('cancel', async (ctx) => {
+    const session = getSession(ctx);
+    session.pendingAttachment = undefined;
+    session.pendingDisputeEvidence = undefined;
+    await ctx.scene.leave();
+    await ctx.replyWithHTML(
+      `⭕ <b>Operation cancelled.</b>\n\nReturn to the main menu:`,
+      Markup.inlineKeyboard([homeButtonRow()])
+    );
+  });
+
+  // /home command — main menu
+  bot.command('home', async (ctx) => {
+    await ctx.replyWithHTML(
+      `╔══════════════════════╗\n` +
+      `    🏠  <b>MAIN  MENU</b>\n` +
+      `╚══════════════════════╝\n\n` +
+      `⟫ Choose an option:`,
+      homeKeyboard()
+    );
+  });
+
+  // Inline button for home
+  bot.action('cmd:home', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.replyWithHTML(
+      `╔══════════════════════╗\n` +
+      `    🏠  <b>MAIN  MENU</b>\n` +
+      `╚══════════════════════╝\n\n` +
+      `⟫ Choose an option:`,
+      homeKeyboard()
+    );
+  });
+
+  // Inline button for /help shortcut
+  bot.action('cmd:help', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.replyWithHTML(helpText(),
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')],
+        homeButtonRow(),
+      ])
+    );
+  });
+
+  // Inline button for /profile shortcut
+  bot.action('cmd:profile', async (ctx) => {
+    await ctx.answerCbQuery();
+
+    if (!ctx.dbUser) {
+      await ctx.reply('Please /start the bot first.');
+      return;
+    }
+
+    const userId = ctx.dbUser._id;
+
+    const [totalDeals, asBuyer, asSeller, completedDeals, activeDeals] = await Promise.all([
+      Deal.countDocuments({ $or: [{ buyer: userId }, { seller: userId }] }),
+      Deal.countDocuments({ buyer: userId }),
+      Deal.countDocuments({ seller: userId }),
+      Deal.countDocuments({
+        $or: [{ buyer: userId }, { seller: userId }],
+        status: 'completed',
+      }),
+      Deal.countDocuments({
+        $or: [{ buyer: userId }, { seller: userId }],
+        status: { $nin: ['cancelled', 'completed', 'resolved'] },
       }),
     ]);
 
@@ -227,36 +401,37 @@ export function setupCommands(bot: Telegraf<BotContext>) {
     const name = ctx.dbUser.username ? `@${ctx.dbUser.username}` : ctx.dbUser.firstName;
 
     await ctx.replyWithHTML(
-      `👤 <b>Profile — ${name}</b>\n\n` +
-
-      `⭐ <b>Reputation Score:</b> ${rep.score}\n` +
-      `📅 Member since: ${memberSince}\n\n` +
-
-      `━━━ <b>Deal Statistics</b> ━━━\n` +
-      `📊 Total Deals: <b>${totalDeals}</b>\n` +
-      `   ├ As Buyer: ${asBuyer}\n` +
-      `   └ As Seller: ${asSeller}\n` +
-      `✅ Completed: <b>${completedDeals}</b>\n` +
-      `🔄 Active: <b>${activeDeals}</b>\n\n` +
-
-      `━━━ <b>Dispute Record</b> ━━━\n` +
-      `⚖️ Total Disputes: <b>${rep.disputesTotal}</b>\n` +
-      `🏆 Won: <b>${rep.disputesWon}</b>\n` +
-      `❌ Lost: <b>${rep.disputesLost}</b>\n`,
+      profileText(name, rep, memberSince, totalDeals, asBuyer, asSeller, completedDeals, activeDeals),
       Markup.inlineKeyboard([
         [Markup.button.callback('📋 My Deals', 'cmd:mydeals')],
         ...websiteButtonRow('🌐 View on Website', '/profile'),
+        homeButtonRow(),
       ])
     );
   });
 
-  // /cancel command
-  bot.command('cancel', async (ctx) => {
-    const session = getSession(ctx);
-    session.pendingAttachment = undefined;
-    session.pendingDisputeEvidence = undefined;
-    await ctx.scene.leave();
-    await ctx.reply('Operation cancelled. Use /newdeal to start again.');
+  // Inline button for /login shortcut
+  bot.action('cmd:login', async (ctx) => {
+    await ctx.answerCbQuery();
+
+    if (!ctx.from) return;
+
+    const frontendUrl = env.FRONTEND_URL;
+    if (!frontendUrl || !frontendUrl.startsWith('https')) {
+      await ctx.reply('Website login is not available yet.');
+      return;
+    }
+
+    const token = createLoginToken(ctx.from.id);
+    const loginUrl = `${frontendUrl}/login?token=${token}`;
+
+    await ctx.replyWithHTML(
+      loginText(),
+      Markup.inlineKeyboard([
+        [Markup.button.url('🌐 Log In to Website', loginUrl)],
+        homeButtonRow(),
+      ])
+    );
   });
 
   // Inline button for /newdeal shortcut
@@ -287,20 +462,37 @@ export function setupCommands(bot: Telegraf<BotContext>) {
       .lean();
 
     if (deals.length === 0) {
-      await ctx.editMessageText('You have no active deals.\n\nUse /newdeal to create one!');
+      await ctx.replyWithHTML(
+        `╔══════════════════════╗\n` +
+        `     📋  <b>MY  DEALS</b>\n` +
+        `╚══════════════════════╝\n\n` +
+        `No active deals found.\nCreate your first deal below!`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback('🆕 Create New Deal', 'cmd:newdeal')],
+          homeButtonRow(),
+        ])
+      );
       return;
     }
 
-    let text = `📋 <b>Your Active Deals</b>\n\n`;
+    let text =
+      `╔══════════════════════╗\n` +
+      `     📋  <b>MY  DEALS</b>  (${deals.length})\n` +
+      `╚══════════════════════╝\n\n`;
     const buttons: any[][] = [];
 
-    deals.forEach(deal => {
-      text += formatDealListItem(deal, ctx.from!.id) + '\n\n';
+    deals.forEach((deal, i) => {
+      text += formatDealListItem(deal, ctx.from!.id);
+      if (i < deals.length - 1) text += `\n\n─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─\n\n`;
+      else text += `\n`;
       buttons.push([
-        Markup.button.callback(`📄 ${deal.dealId}`, `view:${deal.dealId}`),
+        Markup.button.callback(`📄 ${deal.dealId} — ${formatDealStatus(deal.status)}`, `view:${deal.dealId}`),
       ]);
     });
 
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+    text += `\n═══════════════════════`;
+    buttons.push(homeButtonRow());
+
+    await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
   });
 }

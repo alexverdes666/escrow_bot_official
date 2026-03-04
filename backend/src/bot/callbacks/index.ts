@@ -4,6 +4,7 @@ import { Deal, User, AuditLog, Dispute } from '../../models';
 import { getNotificationService } from '../../services/notification.service';
 import { formatDealSummary, formatDealStatus } from '../utils/formatDeal';
 import { websiteButtonRow } from '../utils/safeUrl';
+import { homeButtonRow } from '../keyboards';
 import { env } from '../../config/env';
 import { generateDepositAddress, validateWalletAddress } from '../../services/wallet.service';
 import { getChainService, getChainLabel } from '../../services/chains';
@@ -29,7 +30,7 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
 
     const summary = formatDealSummary(deal);
     const status = formatDealStatus(deal.status);
-    const text = `${summary}\n\n<b>Status:</b> ${status}`;
+    const text = `${summary}\n\n⟫ <b>Current Status:</b> ${status}`;
 
     // Build action buttons based on status and user role
     const buttons: any[][] = [];
@@ -95,6 +96,7 @@ export function setupCallbacks(bot: Telegraf<BotContext>) {
     }
 
     buttons.push(...websiteButtonRow('🌐 View on Website', `/deals/${dealId}`));
+    buttons.push(homeButtonRow());
 
     await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
   });

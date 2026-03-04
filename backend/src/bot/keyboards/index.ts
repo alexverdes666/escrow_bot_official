@@ -1,5 +1,25 @@
 import { Markup } from 'telegraf';
 import { IDealTemplate } from '../../models';
+import { websiteButtonRow } from '../utils/safeUrl';
+
+export function homeKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('🆕  Create New Deal', 'cmd:newdeal')],
+    [Markup.button.callback('📋  My Deals', 'cmd:mydeals')],
+    [
+      Markup.button.callback('👤  Profile', 'cmd:profile'),
+      Markup.button.callback('🔐  Login', 'cmd:login'),
+    ],
+    [
+      Markup.button.callback('📖  Help', 'cmd:help'),
+    ],
+    ...websiteButtonRow('🌐  Open Website'),
+  ]);
+}
+
+export function homeButtonRow() {
+  return [Markup.button.callback('◀️  Back to Menu', 'cmd:home')];
+}
 
 export function roleKeyboard() {
   return Markup.inlineKeyboard([
